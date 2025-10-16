@@ -1,0 +1,21 @@
+{
+    "npc": [],
+    "pk": false,
+    "scene_id": "1514",
+    "scene_name": "花果山",
+    "music": "",
+    "map_width": 3200,
+    "map_height": 2400,
+    "map_tile_width": 320,
+    "map_tile_height": 240,
+    "map_tile_column": 10,
+    "map_tile_row": 10,
+    "play_bgm": false,
+    "bgm_volume": 0.1,
+    "spawn_areas": [],
+    "resource_nodes": [],
+    "environment": {
+        "weather": "sunny",
+        "time_of_day": "day"
+    }
+}

@@ -1,0 +1,118 @@
+{
+    "npc": [
+        {
+            "id": 1,
+            "position": [
+                846,
+                164
+            ],
+            "name": "二郎神"
+        },
+        {
+            "id": 5,
+            "position": [
+                130,
+                1759
+            ],
+            "task": "common_1",
+            "name": "小龙猫"
+        }
+    ],
+    "pk": true,
+    "scene_id": "1042",
+    "scene_name": "首阳山",
+    "music": "bgm.mp3",
+    "map_width": 2560,
+    "map_height": 1920,
+    "map_tile_width": 320,
+    "map_tile_height": 240,
+    "map_tile_column": 8,
+    "map_tile_row": 8,
+    "play_bgm": false,
+    "bgm_volume": 0.1,
+    "spawn_areas": [
+        {
+            "monster_id": 8,
+            "polygon": [
+                [
+                    2077,
+                    607
+                ],
+                [
+                    2310,
+                    551
+                ],
+                [
+                    2432,
+                    557
+                ],
+                [
+                    2389,
+                    487
+                ],
+                [
+                    2261,
+                    470
+                ],
+                [
+                    2141,
+                    396
+                ],
+                [
+                    2150,
+                    515
+                ]
+            ],
+            "spawn_rate": 0.3,
+            "max_count": 3,
+            "monster_name": "灵狐",
+            "edit": false
+        },
+        {
+            "monster_id": 7,
+            "monster_name": "蜃气妖",
+            "polygon": [
+                [
+                    550,
+                    1004
+                ],
+                [
+                    784,
+                    1153
+                ],
+                [
+                    1203,
+                    1246
+                ],
+                [
+                    798,
+                    1393
+                ],
+                [
+                    380,
+                    1140
+                ]
+            ],
+            "spawn_rate": 0.5,
+            "max_count": 8,
+            "edit": false,
+            "handles": [],
+            "name": "蜃气妖"
+        }
+    ],
+    "resource_nodes": [
+        {
+            "type": "mining",
+            "position": [
+                7,
+                9
+            ],
+            "resource_id": "ore_001",
+            "respawn_time": 300
+        }
+    ],
+    "environment": {
+        "weather": "sunny",
+        "time_of_day": "day"
+    }
+}

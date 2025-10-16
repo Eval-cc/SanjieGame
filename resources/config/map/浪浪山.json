@@ -1,0 +1,21 @@
+{
+    "npc": [],
+    "pk": false,
+    "scene_id": "浪浪山",
+    "scene_name": "浪浪山",
+    "music": "",
+    "map_width": 1600,
+    "map_height": 1207,
+    "map_tile_width": 320,
+    "map_tile_height": 240,
+    "map_tile_column": 5,
+    "map_tile_row": 5,
+    "play_bgm": false,
+    "bgm_volume": 0.1,
+    "spawn_areas": [],
+    "resource_nodes": [],
+    "environment": {
+        "weather": "sunny",
+        "time_of_day": "day"
+    }
+}

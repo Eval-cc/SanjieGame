@@ -1,0 +1,21 @@
+{
+    "npc": [],
+    "pk": false,
+    "scene_id": "1003",
+    "scene_name": "世外桃源",
+    "music": "",
+    "map_width": 3740,
+    "map_height": 1980,
+    "map_tile_width": 320,
+    "map_tile_height": 240,
+    "map_tile_column": 12,
+    "map_tile_row": 8,
+    "play_bgm": false,
+    "bgm_volume": 0.1,
+    "spawn_areas": [],
+    "resource_nodes": [],
+    "environment": {
+        "weather": "sunny",
+        "time_of_day": "day"
+    }
+}
