@@ -16,11 +16,13 @@ from src.code.Item import Item
 from src.code.SpriteBase import SpriteBase
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
-from src.manager.GameLuaManager import GameLuaManager
+# from src.manager.GameLuaManager import GameLuaManager
 from src.manager.SourceManager import SourceManager
 from src.necessary.GameBattle import BattleManager
 from src.render.GameUI import GameUI
 from typing import TYPE_CHECKING
+
+from src.system.GameToast import GameToastManager
 
 if TYPE_CHECKING:
     from src.manager.GameManager import GameManager
@@ -228,6 +230,7 @@ class GameBag:
 
         item_data: dict[str, str] = SourceManager.get_csv("items", str(item_id))
         if item_data is None:
+            GameToastManager.add_message(f"无法追加道具:[{item_id}], 不存在的道具信息")
             GameLogManager.log_service_error(f"无法追加道具:[{item_id}], 不存在的道具信息")
             return
 
@@ -284,7 +287,7 @@ class GameBag:
         # 挡在叠加操作的下面
         if page == -1:
             # TODO: 需要在游戏里面提示 背包满了
-            GameLogManager.log_service_error(f"无法追加道具:[{item_id}], 不存在的道具信息")
+            GameToastManager.add_message("背包满了")
             return
 
         item = Item(item_data)
@@ -521,6 +524,7 @@ class GameBag:
         # 先得到剩余的背包容量
         item_data: dict[str, str] = SourceManager.get_csv("items", str(item_id))
         if item_data is None:
+            GameToastManager.add_message(f"无法追加道具:[{item_id}], 不存在的道具信息")
             GameLogManager.log_service_error(f"无法追加道具:[{item_id}], 不存在的道具信息")
             return False
 
@@ -554,7 +558,7 @@ class GameBag:
         x1, y1 = from_pos
         x2, y2 = target_pos
         if not self.has_box(x1, y1) or not self.has_box(x2, y2):
-            GameLogManager.log_service_debug(f"选中坐标:{from_pos}, 终点坐标:{target_pos}")
+            # GameLogManager.log_service_debug(f"选中坐标:{from_pos}, 终点坐标:{target_pos}")
             return False
         if page == -1:
             page = self.current_page - 1
@@ -668,7 +672,7 @@ class GameBag:
             else:
                 if self.__select_item:
                     if not self.__select_item.get("item").can_drop:
-                        GameLogManager.log_service_debug(f"当前道具不允许丢弃")
+                        GameToastManager.add_message("当前道具不允许丢弃")
                     else:
                         u_player: "SpriteBase" = self.gm.get("主角")
                         __world_pos = u_player.get_pos_world()
@@ -889,15 +893,15 @@ class GameBag:
                 self.__use_consumables(item)
                 return
             case 3:  # 矿石
-                GameLogManager.log_service_debug(f"矿石道具未实现:{item}")
+                GameToastManager.add_message(f"矿石道具未实现:{item}")
                 return
-        GameLogManager.log_service_debug(f"无效类型的道具:{item}")
+        GameToastManager.add_message(f"无效类型的道具:{item}")
 
     def __use_equip(self, equip: Item, un_use: bool = False) -> bool:
         """ 使用装备 """
         # 是否处于战斗状态, 战斗中不允许使用装备
         if BattleManager.battle_sta():
-            GameLogManager.log_service_debug("战斗中无法使用装备")
+            GameToastManager.add_message("战斗中无法使用装备")
             return False
 
         # 先判断当前是不是已经有了装备
@@ -913,7 +917,7 @@ class GameBag:
 
         if self.get_items_count() == 0 and (has_equip or un_use):
             # 没有容量, 但是有装备需要替换下来, 提示用户没有空间了--
-            GameLogManager.log_service_debug("背包剩余容量不足")
+            GameToastManager.add_message("背包剩余容量不足")
             return False
 
         u_player: "Player" = self.gm.get("主角")
@@ -947,7 +951,7 @@ class GameBag:
             # else:
             #     return
         else:
-            GameLogManager.log_service_debug(f"[消耗品]无效道具阶段:{item.stage}")
+            GameToastManager.add_message(f"[消耗品]无效道具阶段:{item.stage}")
             return
         item.count -= 1
         if item.count <= 0:

@@ -22,6 +22,7 @@ from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
 from src.manager.GameMapManager import GameMapManager
 from src.manager.SourceManager import SourceManager
+from src.system.GameToast import GameToastManager
 
 if TYPE_CHECKING:
     from src.manager.GameManager import GameManager
@@ -346,6 +347,7 @@ class _Battle(SpriteBase):
                                                     self.gm.game_win_rect.height // 2 - self.cmd_tip_bg.height // 2))
 
     def log(self, msg: str):
+        GameToastManager.add_message(msg)
         GameLogManager.log_service_debug("[BattleLog]", msg)
 
     def ui_cmd_click(self, cmd: str):
@@ -811,7 +813,7 @@ class _Battle(SpriteBase):
                 if el.get("tag") == "p" and el.get("text"):
                     skill_name = el.get("text")
         if skill_name is None:
-            GameLogManager.log_service_debug("无法释放技能,没有找到当前技能的信息")
+            GameToastManager.add_message("无法释放技能,没有找到当前技能的信息")
             game_ui: GameUI = self.gm.get("游戏UI")
             game_ui.change_ui_layer("指令框_人物")
             return

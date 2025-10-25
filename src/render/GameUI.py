@@ -21,6 +21,7 @@ from src.code.SpriteBase import SpriteBase
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
 from src.system.Animator import Animator
+from src.system.GameToast import GameToastManager
 
 
 class GameUI(SpriteBase):
@@ -133,6 +134,7 @@ class GameUI(SpriteBase):
             "mask_surface": None,
             "update_blit": [] if options.get("update_blit") is None else options.get("update_blit"),
             "listen_keyboard": options.get("listen_keyboard"),
+            "move_callback": options.get("move_callback"), # 当前ui的拖拽事件回调, ui发生移动时触发
         }
         for k in options:
             if params.get(k) is None:
@@ -186,12 +188,14 @@ class GameUI(SpriteBase):
                 self.__hover_surface.get("rect").y = max(0, min(target_y,
                                                                 self.gm.game_win_rect.height - self.__hover_surface.get(
                                                                     "rect").height))
+                # 触发移动事件回调
+                if self.__hover_surface.get("move_callback"):
+                    self.__hover_surface.get("move_callback")(self.__hover_surface.get("rect"))
         for ui_surface in self.__sort_surface.values():
             if ui_surface.get("show"):
                 # 当前UI控件是否有刷新surface的方法, 每个UI自己实现重绘的逻辑
                 if ui_surface.get("update_blit"):
                     ui_surface.get("update_blit")()
-
 
                 # 有父级组件的, 需要减去父级组件的偏移,因为此时的组件坐标是依赖父组件的
                 draw_rect = [ui_surface.get("rect").x, ui_surface.get("rect").y]
@@ -208,8 +212,8 @@ class GameUI(SpriteBase):
                             ui_surface.get("frame")["time"] = ui_surface.get("frame").get("timer", 0)
                             ui_surface.get("frame")["index"] = (frame_index + 1) % ui_surface.get("frame").get("count")
                     self.gm.game_win.blit(ui_surface.get("surface"),
-                                  draw_rect,
-                                  (frame_index * frame_size, 0, frame_size, frame_size))
+                                          draw_rect,
+                                          (frame_index * frame_size, 0, frame_size, frame_size))
 
                 else:
                     self.gm.game_win.blit(ui_surface.get("surface"), draw_rect)
@@ -287,6 +291,12 @@ class GameUI(SpriteBase):
                         not pygame.Rect(target.get("drag_rect")).collidepoint(event.get("mouse_pos")[0],
                                                                               event.get("mouse_pos")[1]):
                     # 进来这就是没有触发到拖拽区域- 点击拖拽区域不允许往下分发点击事件
+
+                    if target.get("bubble"):
+                        # 如果当前UI 是允许冒泡的. 那么执行事件之后照样返回True
+                        if cl:
+                            cl()
+                        return True
                     return False if cl is None else cl()
 
                 self.drag_first_pos = [event.get("mouse_pos")[0], event.get("mouse_pos")[1]]
@@ -296,6 +306,7 @@ class GameUI(SpriteBase):
                 return False
 
             return False if cl is None else cl()
+        return True
 
     def mouse_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         super().mouse_up(event)
@@ -316,7 +327,7 @@ class GameUI(SpriteBase):
             self.__hover_surface["drag_rect"] = [int(i) for i in drag_pos]
 
         self.__hover_surface = None
-        return False
+        return True
 
     def mouse_move(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.get_click_sprite_index() >= 0:
@@ -326,7 +337,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def mouse_enter(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.get_click_sprite_index() >= 0:
@@ -336,7 +348,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def mouse_out(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.get_click_sprite_index() >= 0:
@@ -346,7 +359,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def mouse_double_click(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """
@@ -361,7 +375,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def mouse_scroll_wheel_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """
@@ -376,7 +391,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def mouse_scroll_wheel_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """
@@ -391,7 +407,8 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun()
-        return False
+            return False
+        return True
 
     def keyboard_pressed(self, event: Dict[str, ScancodeWrapper] | pygame.event.EventType):
         if self.get_click_sprite_index() >= 0:
@@ -401,12 +418,14 @@ class GameUI(SpriteBase):
             if not move_fun:
                 return False
             move_fun(event)
-        return False
+            return False
+        return True
 
-    def change_ui_layer(self, name: str, drag: bool = False, center: bool = False):
+    def change_ui_layer(self, name: str, drag: bool = False, center: bool = False, right: bool = False):
         """ 修改UI层级"""
         target_ui: dict = self.__sort_surface.get(name)
         if target_ui is None:
+            GameToastManager.add_message(f"打开UI失败! 未知的UI组件:{name}")
             GameLogManager.log_service_debug(f"打开UI失败! 未知的UI组件:{name}")
             return
         # 得到当前最大的层级, 每次操作都会进行排序, 所以索引 0 一定的最上面的ui
@@ -437,7 +456,8 @@ class GameUI(SpriteBase):
         # 是否需要恢复到屏幕中间
         if center:
             self.reset_ui_center(name)
-
+        elif right:
+            self.reset_ui_center(name)
 
     def listen_keyboard(self):
         """
@@ -455,7 +475,8 @@ class GameUI(SpriteBase):
             if sur.get("listen_keyboard") and sur.get("show"):
                 if sur.get("key_up"):
                     sur["key_up"](event)
-                    break
+                    return False
+        return True
 
     def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if event.get("event").scancode == 41:
@@ -463,17 +484,15 @@ class GameUI(SpriteBase):
             for sur in self.rect_list:
                 if sur.get("listen_keyboard") and sur.get("show"):
                     self.close_surface_ui(sur.get("name"))
-                    break
-            return
+                    return False
+            return True
         # 给优先级最高的UI触发键盘时间
         for sur in self.rect_list:
             if sur.get("listen_keyboard") and sur.get("show"):
                 if sur.get("key_down"):
                     sur["key_down"](event)
-                    break
-
-        # player = self.gm.get("主角")
-        # player.bag.add_item(event.get("event").scancode - 88)
+                    return False
+        return True
 
     def get_surface_show(self, name: str):
         """返回指定名称的UI是否显示"""
@@ -502,7 +521,6 @@ class GameUI(SpriteBase):
             del sur["hide_callback_once"]
         return True
 
-
     def get_surface_ui(self, name: str) -> pygame.Surface | None:
         """获取指定UI的surface精灵"""
         sur = self.__sort_surface.get(name)
@@ -510,7 +528,7 @@ class GameUI(SpriteBase):
             return None
         return sur["surface_raw"].copy()  # 返回精灵的引用, 不然会数据污染
 
-    def set_surface_ui(self, name: str, surface: pygame.Surface):
+    def set_surface_ui(self, name: str, surface: pygame.Surface, show: bool = False):
         """更新指定UI的surface精灵"""
         sur = self.__sort_surface.get(name)
         if sur is None:
@@ -530,7 +548,8 @@ class GameUI(SpriteBase):
             # 新的宽度可拖拽区域也要根据新的宽度来更新
             drag_pos[2] = sur["rect"].width - (old_w - drag_pos[2])
             sur["drag_rect"] = [int(i) for i in drag_pos]
-
+        if show:
+            sur["show"] = True
         return True
 
     def remove_surface_ui(self, name: str):
@@ -541,15 +560,21 @@ class GameUI(SpriteBase):
                 if ui.get("name") == name:
                     self.rect_list.remove(ui)
                     break
-            self.__sort_layer_layer() # 刷新一下ui
+            self.__sort_layer_layer()  # 刷新一下ui
             return True
         return False
 
-    def reset_ui_center(self, name: str):
+    def reset_ui_center(self, name: str, right: bool = False):
         """调整UI恢复到屏幕中间"""
         sur = self.__sort_surface.get(name)
         sur_rect = sur.get("rect")
-        sur_rect.x = int(self.gm.game_win_rect.width / 2) - int(sur_rect.width / 2)
+        if right:
+            # 靠右对齐
+            sur_rect.x = self.gm.game_win_rect.width - sur_rect.width
+        else:
+            # 居中
+            sur_rect.x = int(self.gm.game_win_rect.width / 2) - int(sur_rect.width / 2)
+
         sur_rect.y = int(self.gm.game_win_rect.height / 2) - int(sur_rect.height / 2)
 
         sur["rect"] = sur_rect
@@ -571,7 +596,6 @@ class GameUI(SpriteBase):
                 return True
         return False
 
-
     def set_surface_cbk(self, name: str, cbk):
         """
         给指定的ui追加单次回调事件
@@ -584,7 +608,6 @@ class GameUI(SpriteBase):
             return False
         sur["hide_callback_once"] = cbk
         return True
-
 
     def parse_size(self, value, ref_size):
         """解析尺寸值，支持:
@@ -622,7 +645,7 @@ class GameUI(SpriteBase):
         sur["label"]["text"] = value
         return True
 
-    def change_mouse_cursor(self, state: int):
+    def change_mouse_cursor(self, state: MouseState):
         if state == MouseState.DEFAULT:
             self.__curr_mouse = "default"
         elif state == MouseState.ATTACK:

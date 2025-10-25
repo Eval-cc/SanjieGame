@@ -21,7 +21,7 @@ from src.manager.GameMapManager import GameMapManager
 
 class GameCamera(SpriteBase):
     def __init__(self):
-        super().__init__([["地图移动事件"],[4]])
+        super().__init__([["地图移动事件"], [4]])
         self.position = [0, 0]
         """相机坐标"""
         self.__mounted = None
@@ -30,72 +30,61 @@ class GameCamera(SpriteBase):
         """相机移动速度"""
         self.__move_action = {}
         """相机移动事件表,每次相机移动的时候,都会触发一次"""
-        self.key_down_pos = [0, 0]
+        # self.key_down_pos = [0, 0]
         """按键按下状态"""
-        # GameEvent.add("地图移动事件", 4, self.clicked)
         """记录挂载对象的上一次移动位置"""
-        self.__mounted_last_pos = [-1,-1]
+        self.__mounted_last_pos = [-1, -1]
 
-        __game_map_size = [0, 0]
-        """地图素材的宽度, 由场景传递给游戏管理器之后, 游戏管理器在分发"""
-
-    def move(self, x: int, y: int):
+    def move(self):
         """相机移动"""
-        if self.__mounted is not None:
-            # x, y = self.__mounted.position[0], self.__mounted.position[1]
-            # self.position[0] = max(x - GameManager.game_win_rect.width / 2,0)
-            # self.position[1] = max(y - GameManager.game_win_rect.height / 2,0)
-            # # 控制触发频率, 仅每次相机位置发送变化的时候触发
-            # if self.__mounted.position != self.__mounted_last_pos or self.__mounted_last_pos[0] == -1:
-            #     self.__mounted_last_pos = self.__mounted.position
-            #     # 触发移动事件
-            #     for evn in self.__move_action.values():
-            #         evn()
+        if self.__mounted is None:
+            return
 
-            x, y = self.__mounted.position
-            cam_w, cam_h = GameManager.game_win_rect.width, GameManager.game_win_rect.height
+        if len(GameManager.game_map_size) == 0:
+            return
 
-            # 当前相机位置
-            cam_x, cam_y = self.position
+        x, y = self.__mounted.position
+        cam_w, cam_h = GameManager.game_win_rect.width, GameManager.game_win_rect.height
 
-            # 定义安全区边距（你可以调整这个值）
-            margin = 300
+        # 当前相机位置
+        cam_x, cam_y = self.position
 
-            # 相机边界
-            left = cam_x + margin
-            right = cam_x + cam_w - margin
-            top = cam_y + margin
-            bottom = cam_y + cam_h - margin
+        # 定义安全区边距（你可以调整这个值）
+        margin = 300
 
-            moved = False  # 标记是否移动相机
+        # 相机边界
+        left = cam_x + margin
+        right = cam_x + cam_w - margin
+        top = cam_y + margin
+        bottom = cam_y + cam_h - margin
 
-            # 检查是否超出边界
-            if x < left:
-                cam_x = max(x - margin, 0)
-                moved = True
-            elif x > right:
-                cam_x = max(x - cam_w + margin, 0)
-                moved = True
+        moved = False  # 标记是否移动相机
 
-            if y < top:
-                cam_y = max(y - margin, 0)
-                moved = True
-            elif y > bottom:
-                cam_y = max(y - cam_h + margin, 0)
-                moved = True
+        # 检查是否超出边界
+        if x < left:
+            cam_x = max(x - margin, 0)
+            moved = True
+        elif x > right:
+            cam_x = max(x - cam_w + margin, 0)
+            moved = True
 
-            # 更新相机位置
-            self.position[0] = cam_x
-            self.position[1] = cam_y
+        if y < top:
+            cam_y = max(y - margin, 0)
+            moved = True
+        elif y > bottom:
+            cam_y = max(y - cam_h + margin, 0)
+            moved = True
 
-            # 如果位置发生变化才触发移动事件
-            if moved:
-                self.__mounted_last_pos = (x, y)
-                for evn in self.__move_action.values():
-                    evn()
-        else:
-            self.position[0] = max(self.position[0] + x, 0)
-            self.position[1] = max(self.position[1] + y, 0)
+        # 更新相机位置
+        self.position[0] = cam_x
+        self.position[1] = cam_y
+
+        # 如果位置发生变化才触发移动事件
+        if moved:
+            self.__mounted_last_pos = (x, y)
+            for evn in self.__move_action.values():
+                evn()
+
         # 根据地图的配置尺寸,限制镜头的移动范围
         if self.position[0] + GameManager.game_win_rect.width >= GameManager.game_map_size[0]:
             self.set_position(x=GameManager.game_map_size[0] - GameManager.game_win_rect.width)
@@ -124,32 +113,7 @@ class GameCamera(SpriteBase):
         return "全局游戏相机"
 
     def render(self):
-        self.move(self.key_down_pos[0], self.key_down_pos[1])
-        if self.key_down_pos[0] != 0 or self.key_down_pos[1] != 0:
-            # 触发移动事件
-            for evn in self.__move_action.values():
-                evn()
-
-    def mouse_move(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-        self.clicked(event)
-
-    def clicked(self, event: Dict[str, pygame.event.EventType]):
-        # 如果挂载对象不为空,那么就根据挂载的对象进行相机移动
-        if self.__mounted is not None:
-            return
-        if event.get("type") == "key_down_pos":
-            ev = event.get("event")
-            if ev.key == pygame.K_LEFT:
-                self.key_down_pos = [-self.__move_speed, 0]
-            elif ev.key == pygame.K_RIGHT:
-                self.key_down_pos = [self.__move_speed, 0]
-            elif ev.key == pygame.K_UP:
-                self.key_down_pos = [0, -self.__move_speed]
-            elif ev.key == pygame.K_DOWN:
-                self.key_down_pos = [0, self.__move_speed]
-
-            return
-        self.key_down_pos = [0, 0]
+        self.move()
 
     def regin_move_event(self, name: str, action: object):
         """追加相机移动事件"""
@@ -171,3 +135,4 @@ class GameCamera(SpriteBase):
     def unmounted(self):
         """卸载相机跟随"""
         self.__mounted = None
+        self.position = [0, 0]

@@ -13,7 +13,7 @@ import math
 import random
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, TYPE_CHECKING
 from uuid import uuid4
 
 import pygame
@@ -22,7 +22,9 @@ from pygame.key import ScancodeWrapper
 from src.code.Enums import SpriteState, SpriteLayer
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
-from src.system.Animator import Animator
+
+if TYPE_CHECKING:
+    from src.system.Animator import Animator
 
 
 class SpriteBase:
@@ -60,41 +62,41 @@ class SpriteBase:
         self.drag_first_pos = [0, 0]
         """保存推拽ui时候的坐标"""
         self.drag_offset_pos = [0, 0]
-        self.layer = SpriteLayer.DEFAULT
+        self.layer: SpriteLayer = SpriteLayer.DEFAULT
         """精灵的图层"""
-        self.layer_order = 1
+        self.layer_order: int = 1
         """精灵的渲染层级"""
 
-        self.healthy = 10
-        self.max_healthy = 10
-        self.mana = 0
-        self.attack = 0
-        self.defense = 0
-        self.attack_speed = 0
-        self.level = 1  # 等级
-        self.miss = 0  # 闪避
-        self.strength = 1  # 力量
-        self.intelligence = 1  # 智力
-        self.constitution = 1  # 体质
-        self.agile = 1  # 敏捷
-        self.endurance = 1  # 耐力
+        self.healthy: int = 10
+        self.max_healthy: int = 10
+        self.mana: int = 0
+        self.attack: int = 0
+        self.defense: int = 0
+        self.attack_speed: int = 0
+        self.level: int = 1  # 等级
+        self.miss: int = 0  # 闪避
+        self.strength: int = 1  # 力量
+        self.intelligence: int = 1  # 智力
+        self.constitution: int = 1  # 体质
+        self.agile: int = 1  # 敏捷
+        self.endurance: int = 1  # 耐力
 
         self.move_speed = 2  # 移动速度
 
         # 上一次点击的时间
-        self.__last_click_time = 0
-        self.__max_click_timer = 0.3
+        self.__last_click_time: float = 0
+        self.__max_click_timer: float = 0.3
 
         # 默认精灵是 4方向的
         self.supported_directions = [1, 2, 3, 4]
-        self.direction = 0  # 默认朝向
+        self.direction: int = 0  # 默认朝向
 
         self.buffs = []  # 当前身上的buff效果
         self.sprite_state = SpriteState.IDLE
         """精灵状态"""
         self.battle_state = False
         """是否处于战斗选中状态"""
-        self.current_path = []
+        self.current_path: list = []
         self.current_path_index = 0
         self.animator: Animator = None
         """精灵的动画组件"""
@@ -104,19 +106,19 @@ class SpriteBase:
         """特效动画组件_头部特效"""
         self.battle_dict: dict = {}
         """存放战斗相关的配置"""
-        self.raw_angle = 0  # 保存原始计算角度（0-360度）
+        self.raw_angle: int = 0  # 保存原始计算角度（0-360度）
         """原始计算角度"""
 
-        self.stand_model = [0,0]
-        self.move_model = [0,0]
-        self.stand_direction = [1, 2, 3, 4]
-        self.move_direction = [1, 2, 3, 4]
-        self.stand_texture = ""
-        self.move_texture = ""
+        self.stand_model: list = [0, 0]
+        self.move_model: list = [0, 0]
+        self.stand_direction: list = [1, 2, 3, 4]
+        self.move_direction: list = [1, 2, 3, 4]
+        self.stand_texture: str = ""
+        self.move_texture: str = ""
         # 单帧宽度
-        self.frame_width = 0
-        self.frame_timer = 0
-        self.frame_delay = 2  # 每 2 帧更新一次
+        self.frame_width: int = 0
+        self.frame_timer: int = 0
+        self.frame_delay: int = 2  # 每 2 帧更新一次
 
         # 4方向映射（配置编号 → 角度）
         self.direction_map_4 = {
@@ -137,10 +139,14 @@ class SpriteBase:
             7: 225,  # 左上 ↖
             8: 315,  # 右上 ↗
         }
+
+        self.__register = []
         # 如果传递了事件, 那么就自动注册事件
         if event_name is not None:
             from src.manager.GameEvent import GameEvent
             """是否需要自动注册键鼠事件"""
+            # 保存自动注册的事件名称
+            self.__register = [f"{event_name}_{self.UID}" for event_name in event_name[0]]
             GameEvent.add([f"{event_name}_{self.UID}" for event_name in event_name[0]], event_name[1], self)
 
     def get_status(self):
@@ -284,35 +290,35 @@ class SpriteBase:
         """
         self.mouse_tap = False
         self.is_dragging = False
-        return False
+        return True
 
     def mouse_move(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """鼠标移动事件
         @:return 返回 False 就结束,  如果返回True就说明允许向下穿透
         """
-        return False
+        return True
 
     def mouse_enter(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """鼠标进入事件
         @:return 返回 False 就结束,  如果返回True就说明允许向下穿透
         """
-        return False
+        return True
 
     def mouse_out(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """鼠标离开事件"""
-        return False
+        return True
 
     def mouse_scroll_wheel_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """滚轮向上事件
         @:return 返回 False 就结束,  如果返回True就说明允许向下穿透
         """
-        return False
+        return True
 
     def mouse_scroll_wheel_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """滚轮向下事件
         @:return 返回 False 就结束,  如果返回True就说明允许向下穿透
         """
-        return False
+        return True
 
     def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """键盘按下事件"""
@@ -324,6 +330,22 @@ class SpriteBase:
 
     def keyboard_pressed(self, event: Dict[str, ScancodeWrapper] | pygame.event.EventType):
         """触发键盘长按事件"""
+        pass
+
+    def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        """
+        接收输入的中文候选字事件
+        :param event:
+        :return: {
+            dict:{
+                text:"xxxx",
+                window:None
+            },
+            text:"xxx",
+            type:"771",
+            window:None
+        }
+        """
         pass
 
     def get_size(self):

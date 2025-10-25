@@ -21,11 +21,13 @@ from src.manager.GameManager import GameManager
 
 if TYPE_CHECKING:
     from src.render.GameUI import GameUI
+    from src.components.GameInput import GameInput
 
 keyword_dict = {
     6: "key_down",
     7: "key_up",
     8: "keyboard_pressed",
+    9: "key_text",
 }
 
 global_key_dict = {
@@ -59,6 +61,8 @@ class GameEvent:
     # 保存上次按下的事件,用于触发长按
     __first_keyboard_event: pygame.Event = None
 
+    __input_pool: list["GameInput"] = []
+
     @staticmethod
     def add(event_name_list: list[str], event_type_list: list[int], event_fun: object):
         """
@@ -90,11 +94,14 @@ class GameEvent:
     @staticmethod
     def remove(event_name: str):
         """移除事件"""
-        if GameEvent.__events.get(event_name):
-            del GameEvent.__events[event_name]
-            GameEvent.__sort_regin_events = sorted(GameEvent.__events.values(),
-                                                   key=lambda x: (getattr(x['cls'], "layer_order"), x['id']),
-                                                   reverse=True)
+        try:
+            if GameEvent.__events.get(event_name):
+                del GameEvent.__events[event_name]
+                GameEvent.__sort_regin_events = sorted(GameEvent.__events.values(),
+                                                       key=lambda x: (getattr(x['cls'], "layer_order"), x['id']),
+                                                       reverse=True)
+        except Exception as e:
+            GameLogManager.log_service_error(f"移除事件失败: {event_name} {e}")
 
     @staticmethod
     def listen_event():
@@ -103,6 +110,9 @@ class GameEvent:
                 GameEvent.trigger_keyboard_event(GameEvent.__first_keyboard_event, 8)
 
         for event in pygame.event.get():
+            if event.type == pygame.USEREVENT and hasattr(event, "callback"):
+                event.callback()  # 直接执行回调
+                break
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -157,6 +167,8 @@ class GameEvent:
                     'touch': event.touch, 'window': event.window
                 }
                 GameEvent.trigger_mouse_event(ent, "mouse_move")
+            elif event.type == pygame.TEXTINPUT:
+                GameEvent.trigger_keyboard_event(event, 9)
 
     @staticmethod
     def trigger_mouse_event(event: dict, mouse_type: str, must_exec: bool = False):
@@ -195,6 +207,9 @@ class GameEvent:
                         # 比如 method({"type": mouse_type, "mouse_pos": mouse_pos}) => mouse_down({"type": mouse_type, "mouse_pos": mouse_pos})
                         method = getattr(var, mouse_type)
 
+                        # GameLogManager.log_service_debug(
+                        #         f"来自: {method.__qualname__ if hasattr(method, '__qualname__') else method.__class__.__name__}"
+                        #     )
                         # 更新鼠标光标动画
                         if mouse_type == "mouse_move":
                             var_layer = getattr(var, "layer")
@@ -216,7 +231,7 @@ class GameEvent:
 
     @staticmethod
     def trigger_keyboard_event(event: pygame.Event | int, key_type: int):
-        event_key = event if type(event) == int else event.key
+        event_key = event if type(event) == int else event.key if hasattr(event, "key") else event
         if key_type == 6:
             if not GameEvent.has_control_down:
                 lr_control = [1073742048, 1073742052]  # 左右ctrl
@@ -249,10 +264,28 @@ class GameEvent:
                 if hasattr(var, type_name):
                     method = getattr(var, type_name)
                     # 如果调用方法返回 False 就结束,  如果返回True就说明允许向下穿透
+                    if hasattr(event, "text"):
+                        method({"event": event, "type": type_name, "key_name": "", "text": event.text})
+                        return
                     key_name = pygame.key.name(event_key)
+
                     if not method({"event": event, "type": type_name, "key_name": key_name}):
                         return
 
                 else:
                     GameLogManager.log_service_error(
                         f"未能找到类:{getattr(var, "clsName")}的键盘监听方法 [{type_name}=>{hasattr(var, type_name)}]")
+
+    @staticmethod
+    def add_input(component: "GameInput"):
+        """ 将输入框加入事件池 """
+        GameEvent.__input_pool.append(component)
+
+    @staticmethod
+    def remove_input(component: "GameInput"):
+        """ 移除输入框 """
+        GameEvent.__input_pool.remove(component)
+
+    @staticmethod
+    def all_input_pool():
+        return GameEvent.__input_pool

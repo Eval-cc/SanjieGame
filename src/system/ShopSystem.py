@@ -9,20 +9,24 @@
 @Date    ：2025/7/17 20:02 
 @Describe: 商城类
 """
+from typing import TYPE_CHECKING
 
 import pygame
 from src.code.Item import Item
 from src.lib.GameEnum import ShopType
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
-from src.render.GameUI import GameUI
+from src.system.GameToast import GameToastManager
+
+if TYPE_CHECKING:
+    from src.manager.GameManager import GameManager
+    from src.render.GameUI import GameUI
 
 
 class ShopSystem:
     def __init__(self, gm):
-        from src.manager.GameManager import GameManager
         # 基础属性
-        self.gm: GameManager = gm
+        self.gm: "GameManager" = gm
         self.column = 5
         self.row = 4
         self.max_capacity = self.column * self.row  # 单页背包最大容量（格子数或重量上限）
@@ -277,7 +281,7 @@ class ShopSystem:
                     break
         else:
             self.items.clear()
-        game_ui: GameUI = self.gm.get("游戏UI")
+        game_ui: "GameUI" = self.gm.get("游戏UI")
         game_ui.set_btn_text("button_buy_UI", "购买" if shop_type == ShopType.BUY else "出售")
 
         if len(self.items) == 0:
@@ -307,6 +311,7 @@ class ShopSystem:
         #         return
         item_data: dict[str, str] = SourceManager.get_csv("items", str(item_id))
         if item_data is None:
+            GameToastManager.add_message(f"无法追加商品:[{item_id}], 不存在的道具信息")
             GameLogManager.log_service_error(f"无法追加商品:[{item_id}], 不存在的道具信息")
             return
 
@@ -348,8 +353,9 @@ class ShopSystem:
             mask_sur.blit(item.icon, ((item_column * 46) + 12, (item_row * 47) + 40))
             # 是否可堆叠, 可堆叠的还需要显示数量
             if item.can_stack and item.count > 1:
-                mask_sur.blit(self.gm.game_font.get_text_surface_line(str(item.count), True, font_color="#FFFFFF",bolder=True),
-                              ((item_column * 46) + 42 - (len(str(item.count)) * 2), (item_row * 46) + 68))
+                mask_sur.blit(
+                    self.gm.game_font.get_text_surface_line(str(item.count), True, font_color="#FFFFFF", bolder=True),
+                    ((item_column * 46) + 42 - (len(str(item.count)) * 2), (item_row * 46) + 68))
             if item.bind:
                 mask_sur.blit(self.item_lock, (item_column * 46 + 20, (item_row * 47) + 40))
 
@@ -412,7 +418,7 @@ class ShopSystem:
 
     def mouse_down(self):
         mouse_pos = pygame.mouse.get_pos()
-        game_ui: GameUI = self.gm.get("游戏UI")
+        game_ui: "GameUI" = self.gm.get("游戏UI")
         bag_sprite = game_ui.get_surface_sprite("游戏商城")  # 需要加上背包的偏移
         # 小于拖拽区域高度的只能是关闭按钮了
         if mouse_pos[1] <= int(bag_sprite.get("rect").y) + int(bag_sprite.get("drag_rect")[3]):
@@ -440,7 +446,7 @@ class ShopSystem:
                         "price": item.points if item.points > 0 and self.__shop_type == ShopType.BUY else item.money,
                         "total_price": 0,
                         "target": check_bag[4],
-                        "item":item
+                        "item": item
                     }
             else:
                 self.__select_item = None
@@ -499,12 +505,15 @@ class ShopSystem:
             if self.__shop_type == ShopType.SELL:
                 # 如果类型是出售, 那么判断当前道具是否允许进行交易  或者是否绑定了. 绑定道具不允许出售
                 if not item.can_trade or not item.can_shop or item.bind:
-                    GameLogManager.log_service_debug(f"道具:[{item.name}]禁止交易")
+                    GameToastManager.add_message(f"道具:[{item.name}]禁止交易")
                     return
             self.change_item(item)
             if self.__select_item and self.__select_item.get("uid") == item.UID:
                 self.__select_item["count"] += 1
-                self.__select_item["total_price"] = item.points if item.points > 0 and self.__shop_type == ShopType.BUY else item.money * self.__select_item["count"]
+                self.__select_item[
+                    "total_price"] = item.points if item.points > 0 and self.__shop_type == ShopType.BUY else item.money * \
+                                                                                                              self.__select_item[
+                                                                                                                  "count"]
         return
 
     def mouse_scroll_wheel_down(self):
@@ -512,25 +521,27 @@ class ShopSystem:
         UI的滚轮向下事件
         :return:
         """
-        GameLogManager.log_service_debug("向下")
-        check_bag = self.__hover_item
-        if check_bag[0]:
-            GameLogManager.log_service_debug(check_bag)
+        pass
+        # GameLogManager.log_service_debug("向下")
+        # check_bag = self.__hover_item
+        # if check_bag[0]:
+        #     GameLogManager.log_service_debug(check_bag)
 
     def mouse_scroll_wheel_up(self):
         """
         UI的滚轮向上事件
         :return:
         """
-        GameLogManager.log_service_debug("向上")
-        check_bag = self.__hover_item
-        if check_bag[0]:
-            GameLogManager.log_service_debug(check_bag)
+        pass
+        # GameLogManager.log_service_debug("向上")
+        # check_bag = self.__hover_item
+        # if check_bag[0]:
+        #     GameLogManager.log_service_debug(check_bag)
 
     def render(self):
         if self.__select_item:
             self.update_blit = True
-            game_ui: GameUI = self.gm.get("游戏UI")
+            game_ui: "GameUI" = self.gm.get("游戏UI")
             item_cursor_sprite = game_ui.get_surface_sprite("item_cursor")
             frame_index = item_cursor_sprite.get("frame").get("index")
             if item_cursor_sprite.get("frame").get("time") > 0:
@@ -556,7 +567,7 @@ class ShopSystem:
         # 右边区域的偏移 -- left top right , bottom
         right_bag_offset = [255, 45, 225, 180]
 
-        game_ui: GameUI = self.gm.get("游戏UI")
+        game_ui: "GameUI" = self.gm.get("游戏UI")
         bag_offset: pygame.Rect = target.get("bag_offset")
         rect: pygame.Rect = game_ui.get_surface_sprite("游戏商城").get("rect")
 
@@ -603,7 +614,7 @@ class ShopSystem:
             return
 
         self.update_blit = False
-        game_ui: GameUI = self.gm.get("游戏UI")
+        game_ui: "GameUI" = self.gm.get("游戏UI")
         bag_sur = game_ui.get_surface_ui("游戏商城")
 
         item_sur = self.get_item_surface(240, 400, self.items, "L")
@@ -722,7 +733,7 @@ class ShopSystem:
         mask_sur.blit(self.gm.game_font.get_multiple_text(item.description, 195, 85, True, 13, "#32CD32"),
                       (5, 85))
         # 道具单价
-        price_text = f"点卡: {item.points}"  if item.points > 0 and self.__shop_type == ShopType.BUY else f"金币: {item.money}"
+        price_text = f"点卡: {item.points}" if item.points > 0 and self.__shop_type == ShopType.BUY else f"金币: {item.money}"
         mask_sur.blit(self.gm.game_font.get_text_surface_line(price_text, True, 12, "#EEEE00"),
                       (5, 65))
 
@@ -767,7 +778,7 @@ class ShopSystem:
     #             _item.count = total
     #             break
 
-    def change_item(self, item: Item, box_target:str = "L"):
+    def change_item(self, item: Item, box_target: str = "L"):
         """购入/出售 执行道具的位置切换"""
         if self.__hover_item[0]:
             box_target = self.__hover_item[4]
@@ -788,10 +799,9 @@ class ShopSystem:
         else:
             # 出售道具的话直接扣减道具
             if box_target == "L":
-                self.__append_r_item(item, False , True)
+                self.__append_r_item(item, False, True)
             else:
-                self.__append_l_item(item, False , True)
-
+                self.__append_l_item(item, False, True)
 
     def calc_page_loc(self, item_len: int):
         """根据传入的背包计算对应的x,y,page"""
@@ -802,7 +812,7 @@ class ShopSystem:
 
         return x, y, page
 
-    def __append_l_item(self, item:Item, is_clone:bool = True, remove_r:bool = None):
+    def __append_l_item(self, item: Item, is_clone: bool = True, remove_r: bool = None):
         x, y, page = self.calc_page_loc(len(self.items))
         self.max_page = page + 1
         if is_clone:
@@ -827,8 +837,7 @@ class ShopSystem:
                 _item.set_pos(x, y, page)
                 total += 1
 
-
-    def __append_r_item(self, item:Item, is_clone:bool = True, remove_l:bool = None):
+    def __append_r_item(self, item: Item, is_clone: bool = True, remove_l: bool = None):
         if item.can_stack and self.__shop_type == ShopType.BUY:
             for _item in self.r_items:
                 if _item.ID == item.ID:
@@ -857,7 +866,6 @@ class ShopSystem:
                 self.max_page = page + 1
                 _item.set_pos(x, y, page)
                 total += 1
-
 
     def clear_item(self):
         """

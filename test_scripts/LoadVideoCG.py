@@ -101,5 +101,5 @@ class VideoStreamPlayer:
 
 if __name__ == "__main__":
     # 使用示例（请替换为你的视频路径）
-    player = VideoStreamPlayer(r"E:\WeChat Files 4.0\xwechat_files\wxid_cd2d6wgc6vyq22_9fad\msg\video\2025-08\3a66eacbe0b65df5f318885320b87499.mp4", screen_width=500, screen_height=500)
+    player = VideoStreamPlayer(r"D:\Windows\Desktop\20251017_131355.mp4", screen_width=500, screen_height=500)
     player.run()

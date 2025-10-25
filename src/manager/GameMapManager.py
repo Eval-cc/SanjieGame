@@ -25,6 +25,8 @@ from src.manager.SourceManager import SourceManager
 
 from typing import TYPE_CHECKING, Tuple, List, TypedDict, Dict
 
+from src.system.GameToast import GameToastManager
+
 if TYPE_CHECKING:
     from src.character.NPC import NpcSprite
     from src.network.GameWorldServer import GameWorldServer
@@ -229,7 +231,8 @@ class GameMapManager:
             raise FileNotFoundError(f"未找到当前地图[{map_name}]的json配置文件")
         # 通知服务器.我换场景了
         w_server: "GameWorldServer" = GameManager.get_manager("w_server")
-        w_server.change_room(map_name)
+        if w_server:
+            w_server.change_room(map_name)
 
         lua_obj = GameLuaManager.load_map_lua(map_name)
         if lua_obj is not None:
@@ -262,6 +265,7 @@ class GameMapManager:
                         continue
                     GameMapManager.__passable.append(list(pa))
         except Exception as e:
+            GameToastManager.add_message(f"读取地图障碍文件出错")
             GameLogManager.log_service_error(f"读取地图障碍文件出错, {e}")
 
         """读取遮罩数据"""
@@ -295,7 +299,8 @@ class GameMapManager:
         # 是否需要移动主角的坐标
         if target_x is not None and target_y is not None:
             u_player: "SpriteBase" = GameManager.get("主角")
-            u_player.set_pos(target_x, target_y)
+            if u_player:
+                u_player.set_pos(target_x, target_y)
 
     @staticmethod
     def game_map_passable() -> list:

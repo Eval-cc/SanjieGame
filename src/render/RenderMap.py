@@ -21,22 +21,17 @@ from typing import Dict
 import math
 
 from src.necessary.GameBattle import BattleManager
-from src.render.GameUI import GameUI
 
 
 class RenderMap(SpriteBase):
     """渲染地图"""
 
     def __init__(self):
-        super().__init__()
+        super().__init__([["地图点击事件"], [1]])
         # 单帧素材的尺寸
         self.curr_one_ime_rect = None
         # 是否终止上一轮的障碍点绘制计算
         self.has_stop_grid_calculate = False
-        # 键盘按下的状态
-        GameEvent.add(["地图点击事件"], [1], self)
-        GameManager.add("游戏UI", GameUI(GameManager))
-        GameManager.add("主角", Player(995+random.randint(50,100), 233 + random.randint(50,170)))
 
     def calculate(self):
         if self.curr_one_ime_rect is None:
@@ -173,7 +168,7 @@ class RenderMap(SpriteBase):
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         super().mouse_down(event)
         if BattleManager.battle_sta():
-            return
+            return False
         x, y = event["mouse_pos"]
         localX, localY = GameManager.scene_to_global_pos_box(x, y)
         # 执行寻路
@@ -187,7 +182,7 @@ class RenderMap(SpriteBase):
         #     相机坐标: {camera_pos}
         #     寻路结果: {find_path}
         # """.strip().replace('\t',""))
-        return
+        return True
 
     # 在初始化时创建网格 Surface
     def create_grid_surface(self):
@@ -290,3 +285,6 @@ class RenderMap(SpriteBase):
                     # )
                     # pygame.draw.rect(mask_surface, (200, 200, 200), ren_rect, 1)
         return mask_surface
+
+    def destroy(self):
+        GameEvent.remove(f"地图点击事件_{self.UID}")

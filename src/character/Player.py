@@ -10,11 +10,8 @@
 @Describe: 角色类
 """
 
-import random
-import time
 from functools import partial
 from typing import List, TYPE_CHECKING
-from pathlib import Path
 
 import pygame
 
@@ -60,26 +57,19 @@ STATUS_POS = {
 
 
 class Player(SpriteBase):
-    def __init__(self, gx: int = 0, gy: int = 0):
+    def __init__(self, acc_name: str, data: dict):
         super().__init__()
         # 添加Animator组件
         self.animator = Animator(GameManager)
         self.eff_animator_stick = Animator(GameManager)
-        self.__g_pos = [gx, gy]
+        self.acc_name = acc_name
+
+        self.__g_pos = [data.get("sx"), data.get("sy")]
 
         self.current_path = []  # 存储当前路径
         self.current_path_index = 0  # 当前路径索引
         self.direction = 0  # 朝向的初始值，默认为右下方向
         self.scene_pos = [0, 0]
-
-        self.mandatory = False
-        # 重置下一次移动的时间
-        self.random_move_timer = 0
-
-        # 单帧宽度
-        self.frame_width = 0
-        self.frame_timer = 0
-        self.frame_delay = 2  # 每 2 帧更新一次
 
         self.has_dialog = False
 
@@ -93,31 +83,56 @@ class Player(SpriteBase):
 
         self.update_blit = False
         self.update_blit_map = False
+
+        self.__load_ui(data)
+        self.__init_status(data)
+        # 加载动画
+        self.load_animations()
+
+        self.btn_s = [
+            {
+                "name": "背包",
+                "source": "exp_9-91483",
+                "loc": (8, 47),
+                "frames": [295, 0, 40, 45],
+                "frames1": [345, 0, 40, 45],
+            },
+            {
+                "name": "属性",
+                "source": "exp_9-91480",
+                "loc": (18, 22),
+                "frames": [110, 105, 30, 35],
+                "frames1": [160, 105, 30, 35]
+            },
+            {
+                "name": "技能",
+                "source": "exp_9-91483",
+                "loc": (35, 10),
+                "frames": [10, 0, 30, 40],
+                "frames1": [60, 0, 30, 40]
+            },
+            {
+                "name": "退出",
+                "source": "exp_9-91486",
+                "loc": (65, 10),
+                "frames": [215, 0, 30, 40],
+                "frames1": [230, 0, 30, 40]
+            }
+        ]
+        self.__extract_frames_from_sprite()
+
+        self.update_blit = True
+
+    def __load_ui(self, data: dict):
+        """
+        加载UI
+        :return:
+        """
         game_ui: GameUI = GameManager.get("游戏UI")
 
-        # 主角的状态栏背景
-        # [_, ui_bg_actor_rect, _] = game_ui.load_system_ui(
-        #     SourceManager.ui_system_path + "/Head/bg_actor.png",
-        #     [160, 60],
-        #     loc="top_right",
-        #     options={
-        #         "name": "状态栏",
-        #         # "mouse_down": self.actor_head_clicked,
-        #         "show": True,
-        #         "has_draw": True
-        #     })
-        #
-        # # 左上角主角头像--默认头像由主角类调用方法来修改
-        # game_ui.load_system_ui(SourceManager.ui_face_path + "/105进阶幽莹娃娃.png", [55, 55],
-        #                        pos=[ui_bg_actor_rect.x + 8,
-        #                             ui_bg_actor_rect.y + 5],
-        #                        options={
-        #                            "name": "头像",
-        #                            "show": True,
-        #                        })
-
+        avatar_name = data.get("avatar")
         sta_sur = SourceManager.load(f"{SourceManager.ui_system_path}/window_actor.png", [250, 400])
-        avatar_sur = SourceManager.load(SourceManager.ui_face_path + "/105进阶幽莹娃娃.png", [55, 55])
+        avatar_sur = SourceManager.load(SourceManager.ui_face_path + f"/{avatar_name}.png", [55, 55])
         sta_sur.blit(avatar_sur, [170, 50])
         game_ui.load_system_ui(sta_sur,
                                [250, 400],
@@ -132,14 +147,6 @@ class Player(SpriteBase):
                                    "update_blit": self.__update_blit,
                                    "listen_keyboard": self.listen_keyboard
                                })
-
-        # game_ui.load_system_ui(SourceManager.ui_face_path + "/105进阶幽莹娃娃.png", [55, 55],
-        #                        pos=[ui_sta_actor_rect.x + 150,
-        #                             ui_sta_actor_rect.y + 5],
-        #                        options={
-        #                            "name": "头像",
-        #                            "show": True,
-        #                        })
 
         ui1_1 = SourceManager.load(f"{SourceManager.ui_system_path}/ui1_1.png").convert_alpha()
         # 左下角功能区
@@ -169,7 +176,7 @@ class Player(SpriteBase):
                                    "update_blit": self.__update_blit_map,
                                    "mouse_down": self.__click_map,
                                })
-        __game_cursor = SourceManager.load(f"{SourceManager.ui_system_path}/map_cursor.png", [15, 15])
+        __game_cursor = SourceManager.load(f"{SourceManager.ui_system_path}/UI_JX/系统框架UI/exp_5-63232.png", [15, 15])
         game_ui.load_system_ui(__game_cursor,
                                pos=[_game_map.width // 2 - __game_cursor.width // 2,
                                     _game_map.height // 2 - __game_cursor.height // 2],
@@ -179,63 +186,20 @@ class Player(SpriteBase):
                                    # "has_draw": True
                                }, sort=True)
 
-        self.__init_status()
-        # 加载动画
-        self.load_animations()
-        target = "actor"
-        anim_name = "进阶夜罗刹"
-        __npc_data = {
-            f"战斗_攻击2": "13",
-            f"战斗_击飞": "4",
-            f"战斗_施法": "16",
-            f"战斗_死亡": "12",
-            f"战斗_挨打": "1"
-        }
-        self.load_battle_anim(target, anim_name, __npc_data)
-
-        self.btn_s = [
-            {
-                "name": "背包",
-                "source": "exp_9-91483",
-                "loc": (8, 47),
-                "frames": [295, 0, 40, 45],
-                "frames1": [345, 0, 40, 45],
-            },
-            {
-                "name": "属性",
-                "source": "exp_9-91480",
-                "loc": (18, 22),
-                "frames": [110, 105, 30, 35],
-                "frames1": [160, 105, 30, 35]
-            },
-            {
-                "name": "技能",
-                "source": "exp_9-91483",
-                "loc": (35, 10),
-                "frames": [10, 0, 30, 40],
-                "frames1": [60, 0, 30, 40]
-            }
-        ]
-        self.__extract_frames_from_sprite()
-
-        self.update_blit = True
-
-    def __init_status(self):
-        self.healthy = 500
-        self.max_healthy = self.healthy
-        self.mana = 100
-        self.attack = 10
-        self.defense = 10
-        self.attack_speed = 5
+    def __init_status(self, data: dict):
+        self.idx = data.get("id")
+        self.healthy = data.get("healthy")
+        self.max_healthy = data.get("max_healthy")
+        self.mana = data.get("mana")
+        self.attack = data.get("attack")
+        self.defense = data.get("defense")
+        self.attack_speed = data.get("attack_speed")
         # 给主角挂上背包
         self.bag = GameBag(GameManager)
-        self.bag.add_item("1")
-        # [self.bag.add_item("2", random.randint(i, 20), False) for i in range(1, 20)]
-        # [self.bag.add_item("4", random.randint(i, 20), False, target_page=2) for i in range(1, 10)]
-        # [self.bag.add_item("3", random.randint(i, 20), False, target_page=3) for i in range(1, 10)]
+        for __ii in data.get("items", []):
+            self.bag.add_item(str(__ii))  # 送一把新手铁剑
 
-        self.name = f"Eval"
-        self.current_path.clear()  # 存储当前路径
+        self.name = data.get("name")
         self.current_path_index = 0  # 当前路径索引
         # 是否触发了对话
         self.has_dialog = False
@@ -245,19 +209,45 @@ class Player(SpriteBase):
         self.position = [x * GameManager.game_box_size, y * GameManager.game_box_size]  # 实际的像素坐标，乘以32格子大小
         self.scene_pos = [x, y]
         self.has_behind = False
-        # 随机移动相关
-        self.random_move_timer = time.time() + random.uniform(2, 5)  # 首次延迟
-        self.mandatory = False  # 允许强制寻路
         self.sprite_state = SpriteState.IDLE
 
-        self.stand_model = [8, 4]
-        self.move_model = [8, 4]
-        self.stand_direction = [1, 2, 3, 4]
-        self.move_direction = [1, 2, 3, 4]
-        self.stand_texture = "@@@@进阶夜罗刹"
-        self.move_texture = "@@@@进阶夜罗刹_move"
+        self.stand_model = data.get("stand_model")
+        self.move_model = data.get("move_model")
+        self.stand_direction = data.get("stand_direction")
+        self.move_direction = data.get("move_direction")
+
+        # texture_pairs = [
+        #     ["@@@@进阶夜罗刹", "@@@@进阶夜罗刹_move"],
+        #     ["NPC小花", "NPC小花_move"],
+        #     ["NPC商会主管", "NPC商会主管_move"],
+        #     ["NPC李善人", "NPC李善人_move"],
+        #     ["NPC酒店老板", "NPC酒店老板_move"],
+        #     ["NPC国子监祭酒", "NPC国子监祭酒_move"],
+        # ]
+        # # 随机选择一个纹理组合
+        # selected_textures = random.choice(texture_pairs)
+
+        # 赋值给实例变量
+        self.stand_texture = data.get("stand_texture")
+        self.move_texture = data.get("move_texture")
+
+        # self.stand_texture = "@@@@进阶夜罗刹"
+        # self.move_texture = "@@@@进阶夜罗刹_move"
         # 设置方向表，用于后续方向匹配（合并站立/移动方向，以保证完整性）
         self.supported_directions = sorted(set(self.stand_direction + self.move_direction))
+
+        target = "actor"
+        # anim_name = "进阶夜罗刹"
+        # __npc_data = {
+        #     f"战斗_攻击2": "13",
+        #     f"战斗_击飞": "4",
+        #     f"战斗_施法": "16",
+        #     f"战斗_死亡": "12",
+        #     f"战斗_挨打": "1"
+        # }
+        anim_name = data.get("anim_name")
+        __npc_data = data.get("npc_data")
+        self.load_battle_anim(target, anim_name, __npc_data)
 
     def __extract_frames_from_sprite(self):
         """从精灵表中提取指定帧并存储到类属性中"""
@@ -500,7 +490,8 @@ class Player(SpriteBase):
 
             if self.current_path_index >= len(self.current_path):
                 w_server: "GameWorldServer" = GameManager.get_manager("w_server")
-                w_server.send_stop()
+                if w_server:
+                    w_server.send_stop()
                 self.stop_moving()
             else:
                 next_target = self.current_path[self.current_path_index]
@@ -567,7 +558,8 @@ class Player(SpriteBase):
         for k in STATUS_POS.keys():
             if hasattr(self, k):
                 if k == "healthy":
-                    sur.blit(GameFont.get_text_surface_line(f"{self.healthy} / {self.max_healthy}", True), STATUS_POS[k])
+                    sur.blit(GameFont.get_text_surface_line(f"{self.healthy} / {self.max_healthy}", True),
+                             STATUS_POS[k])
                     continue
                 sur.blit(GameFont.get_text_surface_line(str(getattr(self, k)), True), STATUS_POS[k])
             else:
@@ -584,7 +576,7 @@ class Player(SpriteBase):
 
         game_ui: GameUI = GameManager.get("游戏UI")
         cursor_sur = game_ui.get_surface_ui("地图光标")
-        rotated_cursor = pygame.transform.rotate(cursor_sur, - self.raw_angle - 50)
+        rotated_cursor = pygame.transform.rotate(cursor_sur, - self.raw_angle + 230)
         game_ui.set_surface_ui("地图光标", rotated_cursor)
 
     def get_pos(self):
@@ -643,12 +635,18 @@ class Player(SpriteBase):
             case "背包":
                 game_ui.change_ui_layer("角色背包")
                 return
+            case "退出":
+                w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+                if w_server:
+                    w_server.disconnect()
+                else:
+                    GameManager.logout()
             case _:
                 GameLogManager.log_service_error(f"无法识别的指令: {cbk_name}")
 
         self.update_blit = True
 
-    def change_status(self, status: dict, add:bool = True):
+    def change_status(self, status: dict, add: bool = True):
         for k in status.keys():
             val = int(status.get(k))
             if not add:

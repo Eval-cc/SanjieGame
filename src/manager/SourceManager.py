@@ -13,7 +13,8 @@ import os
 import sys
 from typing import Dict
 from copy import deepcopy
-
+import imageio
+import numpy as np
 import pygame
 
 from src.manager.GameLogManger import GameLogManager
@@ -23,6 +24,8 @@ class SourceManager:
     """资源管理器"""
     __source_dict: Dict[str, pygame.Surface] = {}
     __csv_dict:Dict[str,dict] = {}
+    """ui资源的根目录"""
+    ui_root_path = r"Graphics"
     """存放csv的资源"""
     ui_face_path = r"Graphics\Faces"
     """头像资源目录"""
@@ -60,6 +63,7 @@ class SourceManager:
         game_root = os.path.dirname(os.path.abspath(sys.argv[0]))
 
         # 重写所有路径为绝对路径- 解决打包之后无法找打资源的问题
+        SourceManager.ui_root_path = os.path.join(game_root, "Graphics")
         SourceManager.ui_face_path = os.path.join(game_root, "Graphics/Faces")
         SourceManager.ui_map_path = os.path.join(game_root, "Graphics/Maps")
         SourceManager.ui_item_path = os.path.join(game_root, "Graphics/Icons/items")
@@ -76,6 +80,68 @@ class SourceManager:
         SourceManager.cfg_root_path = os.path.join(game_root, "resources")
 
         SourceManager.log_root_path = os.path.join(game_root, "logs")
+
+    @staticmethod
+    def load_gif_as_atlas(gif_path, frame_padding=2):
+        """
+        将GIF所有帧拼接成单个大Surface（水平排列）
+
+        参数:
+            gif_path: GIF文件路径
+            frame_padding: 帧间距（像素）
+
+        返回:
+            (surface, frame_rects)
+            - surface: 包含所有帧的PyGame Surface
+            - frame_rects: 每帧在surface中的位置列表[pygame.Rect, ...]
+        """
+        # 1. 读取GIF帧
+        gif_frames = imageio.mimread(gif_path)
+        if not gif_frames:
+            raise ValueError("GIF文件无有效帧")
+
+        # 2. 统一帧格式 (RGB, H x W x 3)
+        processed_frames = []
+        max_height = 0
+        total_width = 0
+
+        for frame in gif_frames:
+            # 处理通道
+            if len(frame.shape) == 2:  # 灰度图
+                frame = np.stack([frame] * 3, axis=-1)
+            elif frame.shape[2] == 4:  # 带Alpha通道
+                frame = frame[:, :, :3]  # 丢弃Alpha
+
+            # 转置为 (height, width, channels)
+            frame = np.transpose(frame, (1, 0, 2))
+            processed_frames.append(frame)
+
+            # 计算最大尺寸
+            max_height = max(max_height, frame.shape[0])
+            total_width += frame.shape[1] + frame_padding
+
+        total_width -= frame_padding  # 去除最后一个padding
+
+        # 3. 创建大Surface
+        atlas_surface = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
+        frame_rects = []
+        x_offset = 0
+
+        # 4. 拼接所有帧
+        for frame in processed_frames:
+            h, w = frame.shape[:2]
+
+            # 转换为PyGame Surface
+            frame_surface = pygame.surfarray.make_surface(frame)
+
+            # 计算当前帧位置
+            rect = pygame.Rect(x_offset, (max_height - h) // 2, w, h)
+            atlas_surface.blit(frame_surface, rect)
+            frame_rects.append(rect)
+
+            x_offset += w + frame_padding
+
+        return atlas_surface, frame_rects
 
     @staticmethod
     def load(file_path: str, scale:list[int] = None):
@@ -98,6 +164,8 @@ class SourceManager:
                 SourceManager.__source_dict[file_path] = pygame.image.load(root_path).convert_alpha()
             elif file_name.lower().endswith(".jpg"):
                 SourceManager.__source_dict[file_path] = pygame.image.load(root_path)
+            elif file_name.lower().endswith(".gif"):
+                SourceManager.__source_dict[file_path] = SourceManager.load_gif_as_atlas(root_path)[0]
             else:
                 raise Exception(f"暂不支持的文件类型,{file_name.split(".").pop()}")
             # 是否指定了缩放

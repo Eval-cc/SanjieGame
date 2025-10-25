@@ -19,3 +19,5 @@ bin-release/
 /build/*
 /dict/*
 /.idea/*
+*.spec
+/.venv/

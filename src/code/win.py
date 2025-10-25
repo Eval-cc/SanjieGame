@@ -15,6 +15,8 @@ from src.manager.GameLogManger import GameLogManager
 from src.manager.GameLuaManager import GameLuaManager
 from src.manager.GameMapManager import GameMapManager
 from src.network.GameWorldServer import GameWorldServer
+from src.render.GameLogin import GameLogin
+from src.render.GameUI import GameUI
 from src.render.RenderMap import RenderMap
 from src.manager.GameManager import GameManager
 from src.manager.GameEvent import GameEvent
@@ -43,22 +45,11 @@ class GameWin:
         GameManager.Awake()
         # 初始化字体管理类
         GameFont.load(GameManager.game_win)
-        GameManager.add("地图", RenderMap())
+        GameManager.add("游戏UI", GameUI(GameManager))
+        GameManager.add("登录页面", GameLogin(GameManager))
 
-        GameManager.shop_system = ShopSystem(GameManager)
-
-        # file_path = sys.argv[1]  # 第一个参数（file_path）
         if sys.argv and len(sys.argv) > 1:
             GameManager.has_debug_render = sys.argv[1].lower() == "true"  # 如果传的是字符串 "true"/"false"
-
-        # 实例化服务器连接
-        w_server = GameWorldServer(GameManager.get("主角"),GameManager,"http://llzfs.online:8089/")
-        # w_server = GameWorldServer(GameManager.get("主角"),GameManager)
-        ser_sta = w_server.connect_sync(GameMapManager.map_id)
-        if not ser_sta:
-            raise Exception("服务器连接失败")
-        GameManager.add_manager("w_server", w_server)
-        GameMapManager.change_map("1042")
         self.renderer()
 
     def renderer(self):
@@ -66,7 +57,7 @@ class GameWin:
             GameManager.game_win.fill((10, 10, 10))
             GameEvent.listen_event()
             self.clock.tick(self.fps)
+
             GameManager.render()
             pygame.display.update()
-            # 执行地图事件
             GameMapManager.loop()

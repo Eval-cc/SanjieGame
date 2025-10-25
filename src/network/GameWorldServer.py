@@ -23,7 +23,10 @@ from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
 
 from src.manager.SourceManager import SourceManager
+from src.network.LoginServer import LoginServer
 from src.system.Animator import Animator
+from src.system.GameTipDialog import GameDialogBoxManager
+from src.system.GameToast import GameToastManager
 
 if TYPE_CHECKING:
     from src.manager.GameManager import GameManager
@@ -89,10 +92,10 @@ class GameWorldServer(SpriteBase):
         @self.sio.event
         def connect():
             self.connected = True
-            GameLogManager.log_service_debug("✅ 连接服务器成功!")
+            GameToastManager.add_message("成功连接服务器")
 
             # 发送加入房间请求
-            self.sio.emit('join_room', {
+            self.send_msg('join_room', {
                 'roomId': self.room_id,
                 'playerData': self.player_sprite
             })
@@ -103,27 +106,33 @@ class GameWorldServer(SpriteBase):
         @self.sio.event
         def connect_error(data):
             self.connected = False
-            GameLogManager.log_service_error(f"❌ 连接失败: {data}")
+            GameLogManager.log_service_error(f"连接失败: {data}")
 
         @self.sio.event
         def disconnect():
             self.connected = False
-            GameLogManager.log_service_debug("🔌 断开连接")
+            GameToastManager.add_message("断开连接")
             if self.on_disconnected:
                 self.on_disconnected()
 
         @self.sio.event
         def join_success(data):
             """处理加入成功事件"""
-            self.players.clear()
-            for rk in self.remote_player.keys():
-                self.remote_player[rk].destroy()
-            self.remote_player.clear()
+            # self.players.clear()
+            # for rk in self.remote_player.keys():
+            #     self.remote_player[rk].destroy()
+            # self.remote_player.clear()
             # 设置当前玩家
             if 'player' in data:
                 self.player_id = data['player']['id']
                 self.players[self.player_id] = data['player']
                 self._update_local_sprite_from_data(data['player'])
+                # 推送当前连接的客户端id到后台
+                up_online = LoginServer()
+                up_online.online_limit(self.sprite.acc_name, self.player_id)
+                up_online.on_login_success = lambda data: GameLogManager.log_service_debug(f"成功:{data}")
+                up_online.on_login_failed = lambda data: GameLogManager.log_service_error(f"失败:{data}")
+
             # 添加现有玩家
             if 'allPlayers' in data:
                 for player_data in data['allPlayers']:
@@ -132,7 +141,7 @@ class GameWorldServer(SpriteBase):
                         self.players[player_id] = player_data
                         self._create_remote_player_sprite(player_id, player_data)
 
-            GameLogManager.log_service_debug(f"🎮 加入房间成功! 玩家数: {len(self.players)}")
+            GameLogManager.log_service_debug(f"加入房间成功! 玩家数: {len(self.players)}")
 
         @self.sio.event
         def player_joined(data):
@@ -155,9 +164,22 @@ class GameWorldServer(SpriteBase):
                 if self.on_player_left:
                     self.on_player_left(player)
 
+        @self.sio.event
+        def force_logout(data):
+            """
+            被挤下线了
+            :param data:
+            :return:
+            """
+            # GameLogManager.log_service_error("被人挤下线了")
+            reason = data.get('reason')
+            # GameToastManager.add_message(reason)
+            GameDialogBoxManager.dialog(reason)
+            self.disconnect()
+
         # @self.sio.event
         # def player_moved(data):
-        #     """玩家移动"""
+        #     """玩家移动 明文格式--不推荐"""
         #     player_id = data.get('playerId')
         #     if player_id in self.remote_player:
         #         x, y, direction, sta = data.get('x'), data.get('y'), data.get("direction"), data.get("sta")
@@ -205,7 +227,6 @@ class GameWorldServer(SpriteBase):
             #     'sta': sta,
             #     'current_path': current_path,
             # }
-            # GameLogManager.log_service_debug(json_data)
             # 7. 调用原逻辑
             if player_id in self.remote_player:
                 self._update_remote_player_position(
@@ -217,7 +238,6 @@ class GameWorldServer(SpriteBase):
                     return
                 self.players[player_id]['position'] = [x, y]
 
-
         @self.sio.event
         def player_updated(data):
             """玩家属性更新"""
@@ -225,7 +245,7 @@ class GameWorldServer(SpriteBase):
             if player_id in self.players:
                 self.players[player_id].update(data.get('attributes', {}))
                 self._update_remote_player_attributes(player_id, data.get('attributes', {}))
-                GameLogManager.log_service_debug(f"🔄 玩家 {player_id} 属性已更新")
+                # GameLogManager.log_service_debug(f"玩家 {player_id} 属性已更新")
 
         @self.sio.event
         def chat_message(data):
@@ -292,8 +312,9 @@ class GameWorldServer(SpriteBase):
         """创建远程玩家精灵"""
         # 创建远程玩家精灵实例
         remote_sprite = RemotePlayerSprite(sprite_data, self.gm)
-        GameLogManager.log_service_debug(f"👥 创建远程玩家精灵: {remote_sprite.name},{player_id}")
+        # GameLogManager.log_service_debug(f"👥 创建远程玩家精灵: {remote_sprite.name},{player_id}")
         self.remote_player[player_id] = remote_sprite
+        GameToastManager.add_message(f"玩家:{remote_sprite.name} 加入游戏")
 
     def _remove_remote_player_sprite(self, player_id: str):
         """移除远程玩家精灵"""
@@ -328,17 +349,36 @@ class GameWorldServer(SpriteBase):
         """
         self.room_id = room_id
         try:
-            GameLogManager.log_service_debug(f"🚀 连接到 {self.server_url}，房间: {room_id}...")
+            GameLogManager.log_service_debug(f"连接到 {self.server_url}，房间: {room_id}...")
             self.sio.connect(self.server_url)
             return True
         except Exception as e:
-            GameLogManager.log_service_error(f"❌ 连接失败: {e}")
+            GameLogManager.log_service_error(f"连接失败: {e}")
             return False
 
-    def disconnect(self):
+    def disconnect(self, change_scene: bool = False):
         """断开连接"""
         if self.connected:
             self.sio.disconnect()
+        if change_scene:
+            return
+        self.gm.logout()
+        self.connected = False
+        if self.on_disconnected:
+            self.on_disconnected()
+
+    def send_msg(self, channel: str, data: dict):
+        """
+        推送服务器消息
+        :param channel:
+        :param data:
+        :return:
+        """
+        if not self.connected:
+            GameToastManager.add_message("已断开连接")
+            return
+
+        self.sio.emit(channel, data)
 
     def send_move(self, x: float, y: float):
         """
@@ -353,7 +393,7 @@ class GameWorldServer(SpriteBase):
         if self.connected and self.room_id:
             try:
                 start_time = time.time()
-                self.sio.emit('player_move', {
+                self.send_msg('player_move', {
                     'roomId': self.room_id,
                     'x': int(x),
                     'y': int(y),
@@ -368,17 +408,18 @@ class GameWorldServer(SpriteBase):
 
                 # 每100次打印一次性能统计
                 if self.send_count % 100 == 0:
-                    GameLogManager.log_service_debug(f"📊 网络性能: {send_time:.2f}ms")
+                    GameLogManager.log_service_debug(f"网络性能: {send_time:.2f}ms")
+                    GameToastManager.add_message(f"网络性能: {send_time:.2f}ms")
 
-                # GameLogManager.log_service_debug(f"✅ 发送移动消息: ({x}, {y})")
+                # GameLogManager.log_service_debug(f"发送移动消息: ({x}, {y})")
 
             except Exception as e:
-                GameLogManager.log_service_error(f"❌ 发送移动消息失败: {e}")
+                GameLogManager.log_service_error(f"发送移动消息失败: {e}")
 
     # def send_player_update(self):
     #     """发送玩家属性更新"""
     #     if self.connected and self.room_id and self.player_sprite:
-    #         self.sio.emit('player_update', {
+    #         self.send_msg('player_update', {
     #             'roomId': self.room_id,
     #             'attributes': self.player_sprite
     #         })
@@ -386,7 +427,7 @@ class GameWorldServer(SpriteBase):
     def send_chat(self, message: str):
         """发送聊天消息"""
         if self.connected and self.room_id and message.strip():
-            self.sio.emit('chat_message', {
+            self.send_msg('chat_message', {
                 'roomId': self.room_id,
                 'message': message.strip()
             })
@@ -398,11 +439,11 @@ class GameWorldServer(SpriteBase):
             new_room_id: 新房间ID
         """
         if self.connected:
-            GameLogManager.log_service_debug(f"🔄 正在切换到房间: {new_room_id}")
-            self.disconnect()
+            GameToastManager.add_message(f"正在切换到场景: {new_room_id}")
+            self.disconnect(True)
 
         self.connect_sync(new_room_id)
-        GameLogManager.log_service_debug(f"✅ 已切换到房间: {new_room_id}")
+        GameToastManager.add_message(f"已切换到场景: {new_room_id}")
 
     def get_player(self, player_id: str) -> Optional[Dict[str, Any]]:
         """获取指定玩家信息"""
@@ -452,12 +493,12 @@ class GameWorldServer(SpriteBase):
             return
 
         try:
-            self.sio.emit('player_move', {
+            self.send_msg('player_move', {
                 'roomId': self.room_id,
                 'x': -99,
                 'y': -99,
                 "direction": self.sprite.direction,
-                "sta": 0
+                "sta": SpriteState.IDLE.value
             })
         except socketio.exceptions.BadNamespaceError:
             print("网络连接异常，正在重连...")
@@ -474,6 +515,7 @@ class GameWorldServer(SpriteBase):
                 time.sleep(1)
         return False
 
+
 class RemotePlayerSprite(SpriteBase):
     """远程玩家精灵类（使用世界坐标）"""
 
@@ -487,10 +529,8 @@ class RemotePlayerSprite(SpriteBase):
         self.animator = Animator(self.gm)
 
         # 从网络数据初始化
-        # if 'playerData' in player_data:
         self._init_from_network_data(player_data)
         self.load_animations()
-        # self.gm.add(f"remote_player_{self.client_id}", self)
 
     def _init_from_network_data(self, sprite_data: Dict[str, Any]):
         """从网络数据初始化"""
@@ -536,7 +576,7 @@ class RemotePlayerSprite(SpriteBase):
             frames_by_dir = {}
             if not texture:
                 return frames_by_dir
-            image = SourceManager.load(os.path.join(SourceManager.ui_npc_path,f"{texture}.png"))
+            image = SourceManager.load(os.path.join(SourceManager.ui_npc_path, f"{texture}.png"))
             cols, rows = model
             fw, fh = image.get_width() // cols, image.get_height() // rows
 
@@ -602,7 +642,7 @@ class RemotePlayerSprite(SpriteBase):
         GameFont.render_line_text(self.name,
                                   int(render_x + self.width / 2 -
                                       GameFont.get_text_size(f"{self.name}")[0] / 2),
-                                  render_y - 10, True)
+                                  render_y - 10, True, font_color="#00CD00")
 
     def destroy(self):
         pass
