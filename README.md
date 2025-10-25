@@ -6,7 +6,10 @@
   <img src="https://img.shields.io/badge/License-AGPL--3.0-red">
   <img src="https://img.shields.io/badge/Status-开发中-yellow">
   <br>
-  <img src="https://github.com/Eval-cc/SanjieGame/blob/main/assets/images/game_img.png" width="300">
+  <img src="https://github.com/Eval-cc/SanjieGame/blob/main/assets/git_img/game_img.png" width="300">
+  <br>
+  <p>登录页面</p>
+  <img src="https://github.com/Eval-cc/SanjieGame/blob/main/assets/git_img/login.png" width="300">
 </div>
 
 ---
@@ -24,4 +27,4 @@ B站地址:
 ---
 
 使用了electron 编写了地图编辑器
-  <img src="https://github.com/Eval-cc/SanjieGame/blob/main/assets/images/game_edit.png" width="300">
+  <img src="https://github.com/Eval-cc/SanjieGame/blob/main/assets/git_img/game_edit.png" width="300">

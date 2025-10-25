@@ -31,6 +31,7 @@ from src.network.GameWorldServer import GameWorldServer
 from src.network.LoginServer import LoginServer
 
 from src.render.RenderMap import RenderMap
+from src.system.GameMusic import GameMusicManager
 from src.system.GameTipDialog import GameDialogBoxManager
 from src.system.GameToast import GameToastManager
 from src.system.ShopSystem import ShopSystem
@@ -50,6 +51,7 @@ class GameLogin(SpriteBase):
         self.gm: "GameManager" = gm
         self.rect = pygame.Rect(self.gm.game_win_rect)
 
+        GameMusicManager.play_bgm("login_bg")
         # ========== 第一阶段：立即加载静态背景 ==========
         self._load_static_background()
         self._load_login_ui()
@@ -59,6 +61,7 @@ class GameLogin(SpriteBase):
 
         # ========== 第三阶段：启动异步加载 ==========
         self._start_async_loading()
+
 
     def _load_static_background(self):
         """立即加载静态背景图"""
@@ -305,6 +308,7 @@ class GameLogin(SpriteBase):
             threading.Thread(target=run_async, daemon=True).start()
 
         self.enter_game_offline.set_on_click(on_button_click_offline)
+
 
     def _update_frame_duration(self):
         """更新帧持续时间"""

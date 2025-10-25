@@ -25,6 +25,7 @@ from src.manager.GameLogManger import GameLogManager
 from src.manager.GameMapManager import GameMapManager
 from src.manager.SourceManager import SourceManager
 from src.system.GameDialog import GameDialog
+from src.system.GameMusic import GameMusicManager
 from src.system.GameToast import GameToastManager
 from src.system.ShopSystem import ShopSystem
 
@@ -112,6 +113,7 @@ class GameManager:
         GameManager.game_font = GameFont
         GameManager.game_task_paring_engine = TaskParingEngine()
         GameManager.game_dialog = GameDialog(GameManager)
+        GameMusicManager.Awake()
 
     @staticmethod
     def __refresh_layer():
@@ -249,6 +251,7 @@ class GameManager:
                     en["move"](path)
                     path_list = path
                 else:
+                    GameMusicManager.play_sound("ui_fail")
                     GameLogManager.log_service_debug("寻路失败, 没有找到路径")
 
         return path_list

@@ -124,8 +124,9 @@ class _GameTipDialog(SpriteBase):
         return False  # 开窗之后, 禁止点击下面的内容
 
     def destroy(self):
+        super().destroy()
         self.gm.remove(self)
-        GameEvent.remove(f"游戏UI点击事件_{self.UID}")
+        # GameEvent.remove(f"游戏UI点击事件_{self.UID}")
         self._latest_msg = ""
         if self.confirm_btn:
             self.confirm_btn.destroy()

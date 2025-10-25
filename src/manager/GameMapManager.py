@@ -25,6 +25,7 @@ from src.manager.SourceManager import SourceManager
 
 from typing import TYPE_CHECKING, Tuple, List, TypedDict, Dict
 
+from src.system.GameMusic import GameMusicManager
 from src.system.GameToast import GameToastManager
 
 if TYPE_CHECKING:
@@ -198,7 +199,6 @@ class GameMapManager:
             """读取地图的配置表"""
             with open(map_cfg_path, "r", encoding="utf8") as f:
                 map_cfg = json.load(f)
-                # 生成NPC
                 npc_list = map_cfg.get("npc", [])
                 for nd in npc_list:
                     nid = nd.get("id")
@@ -225,6 +225,12 @@ class GameMapManager:
                 from src.manager.GameManager import GameManager
                 # 这里的宽高表示地图帧 对于的行和列数量
                 GameManager.game_map_size = [w, h]
+                # 场景音乐
+                scene_music = map_cfg.get("music")
+                if scene_music:
+                    GameMusicManager.play_bgm(scene_music)
+                else:
+                    GameMusicManager.pause_bgm()
 
         else:
             GameLogManager.log_service_error(f"未找到当前地图[{map_name}]的json配置文件")

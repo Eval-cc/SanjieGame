@@ -28,8 +28,8 @@ class GameUI(SpriteBase):
     def __init__(self, gm):
         super().__init__([
             ["游戏UI点击事件", "游戏UI键盘按下事件", "游戏UI键盘抬起事件", "游戏UI上滚轮事件", "游戏UI下滚轮事件",
-             "游戏UI键盘长按事件"],
-            [1, 6, 7, 4, 5, 8]])
+             "游戏UI键盘长按事件", "输入框候选字事件"],
+            [1, 6, 7, 4, 5, 8, 9]])
         self.layer_order = 999
         self.rect_list: list = []
 
@@ -134,7 +134,7 @@ class GameUI(SpriteBase):
             "mask_surface": None,
             "update_blit": [] if options.get("update_blit") is None else options.get("update_blit"),
             "listen_keyboard": options.get("listen_keyboard"),
-            "move_callback": options.get("move_callback"), # 当前ui的拖拽事件回调, ui发生移动时触发
+            "move_callback": options.get("move_callback"),  # 当前ui的拖拽事件回调, ui发生移动时触发
         }
         for k in options:
             if params.get(k) is None:
@@ -493,6 +493,15 @@ class GameUI(SpriteBase):
                     sur["key_down"](event)
                     return False
         return True
+
+
+    def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        # 给优先级最高的UI触发键盘时间
+        for sur in self.rect_list:
+            if sur.get("listen_keyboard") and sur.get("show"):
+                if sur.get("key_text"):
+                    sur["key_text"](event)
+                    break
 
     def get_surface_show(self, name: str):
         """返回指定名称的UI是否显示"""

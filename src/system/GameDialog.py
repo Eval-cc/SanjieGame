@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from src.character.NPC import NpcSprite
 
 
-
 class GameDialog:
     def __init__(self, gm):
         # 基础属性
@@ -95,7 +94,8 @@ class GameDialog:
 
             if self.dialog_title is None or self.dialog_title.width != int(width):
                 self.dialog_title = SourceManager.surface_cale(
-                    SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"), [int(width), 32]).convert_alpha()
+                    SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
+                    [int(width), 32]).convert_alpha()
 
             dialog_bg = pygame.Surface((int(width), int(height) - 30), pygame.SRCALPHA)
             dialog_bg.fill(self.gm.game_font.hex_color_to_rgb("#000000"))
@@ -140,8 +140,9 @@ class GameDialog:
                                                           "drag": True,
                                                           "drag_rect": ["auto", "auto", "-25px", 30],
                                                           "bag_offset": pygame.Rect([25, 180, 200, 172]),
-                                                          "key_up": self.key_up,
+                                                          # "key_up": self.key_up,
                                                           "key_down": self.key_down,
+                                                          "key_text": self.key_text,
                                                           # "bag_size": [45, 40],
                                                           # "item_event": None,
                                                           # "item_hover_event": None,
@@ -235,17 +236,17 @@ class GameDialog:
                 # self.update_blit = True
                 return
 
-    def mouse_up(self):
-        pass
-
-    def mouse_move(self):
-        pass
-
-    def mouse_out(self):
-        pass
-
-    def mouse_double_click(self):
-        pass
+    # def mouse_up(self):
+    #     pass
+    #
+    # def mouse_move(self):
+    #     pass
+    #
+    # def mouse_out(self):
+    #     pass
+    #
+    # def mouse_double_click(self):
+    #     pass
 
     def mouse_scroll_wheel_down(self):
         """
@@ -271,79 +272,96 @@ class GameDialog:
             self.update_blit = True
             self.__has_scroll_wheel = True
 
+    def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        key_event = event.get("event")
+
+        target_uuid = self.__focus_node.get("attrs").get("__node_uuid")
+        text = self.__focus_node.get("text", "")
+        if text is None:
+            text = ""
+        new_text = f"{text}{key_event.text}"
+
+        # 调用函数进行更新
+        updated = self.update_element_by_uuid(self.__cached_result, target_uuid, new_text)
+        if updated:
+            self.__cursor_index += len(key_event.text)
+            self.__focus_node["text"] = str(new_text)
+            self.update_blit = True
+            self.__has_focus = True
+
     # def key_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
     #     """键盘抬起事件"""
     #     pass
 
-    # def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-    #     if self.__focus_node:
-    #         # 要更新的 __node_uuid 和新文本
-    #         target_uuid = self.__focus_node.get("attrs").get("__node_uuid")
-    #         text = self.__focus_node.get("text", "")
-    #         if text is None:
-    #             text = ""
-    #         new_text = text + str(event.get("event").unicode)
-    #
-    #         # GameLogManager.log_service_debug(f"按下: {event.get("key_name")}")
-    #
-    #         match event.get("key_name"):
-    #             case "escape":
-    #                 self.__has_focus = False
-    #                 self.__focus_node["attrs"]["focus"] = False
-    #                 self.update_blit = True
-    #                 self.__has_focus = True
-    #                 return
-    #             # 制表符
-    #             case "tab":
-    #                 new_text = "﹒" * 4  # [self.__change_text("﹒") for i in range(self.__input_tab_size)]
-    #                 self.__cursor_index += 4
-    #             # 左移
-    #             case "left":
-    #                 self.__cursor_index = max(self.__cursor_index - 1, 0)
-    #                 self.blink_tick = 0
-    #                 self.blink_show = True
-    #                 self.update_blit = True
-    #                 self.__has_focus = True
-    #                 return
-    #             # 右移
-    #             case "right":
-    #                 self.__cursor_index = min(len(new_text), self.__cursor_index + 1)
-    #                 self.blink_tick = 0
-    #                 self.blink_show = True
-    #                 self.update_blit = True
-    #                 self.__has_focus = True
-    #                 return
-    #
-    #             # 退格键,删除光标之前的元素
-    #             case "backspace":
-    #                 if self.__cursor_index > 0:  # 确保光标不在最前面
-    #                     # 删除光标前一个字符
-    #                     new_text = text[:self.__cursor_index - 1] + text[self.__cursor_index:]
-    #                     self.__cursor_index -= 1  # 光标前移
-    #                     self.blink_tick = 0
-    #                     self.blink_show = True
-    #                 else:
-    #                     return
-    #             # 撤销后一位元素
-    #             case "delete":
-    #                 if self.__cursor_index < len(text):  # 确保光标不在最后面
-    #                     # 删除光标后一个字符
-    #                     new_text = text[:self.__cursor_index] + text[self.__cursor_index + 1:]
-    #                     # 光标位置不需要移动
-    #                     self.blink_tick = 0
-    #                     self.blink_show = True
-    #                 else:
-    #                     return
-    #
-    #             case _:
-    #                 self.__cursor_index += 1
-    #
-    #         # 调用函数进行更新
-    #         updated = self.update_element_by_uuid(self.__cached_result, target_uuid, new_text)
-    #         if updated:
-    #             self.__focus_node["text"] = str(new_text)
-    #             self.update_blit = True
-    #             self.__has_focus = True
+    def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        if self.__focus_node:
+            # 要更新的 __node_uuid 和新文本
+            target_uuid = self.__focus_node.get("attrs").get("__node_uuid")
+            new_text = self.__focus_node.get("text", "")
+            if new_text is None:
+                new_text = ""
+            if hasattr(event.get("event"), "text"):
+                return
+
+            match event.get("key_name"):
+                case "escape":
+                    self.__has_focus = False
+                    self.__focus_node["attrs"]["focus"] = False
+                    self.update_blit = True
+                    self.__has_focus = True
+                    return
+                # 制表符
+                case "tab":
+                    new_text = "﹒" * 4
+                    self.__cursor_index += 4
+                # 左移
+                case "left":
+                    self.__cursor_index = max(self.__cursor_index - 1, 0)
+                    self.blink_tick = 0
+                    self.blink_show = True
+                    self.update_blit = True
+                    self.__has_focus = True
+                    return
+                # 右移
+                case "right":
+                    self.__cursor_index = min(len(new_text), self.__cursor_index + 1)
+                    self.blink_tick = 0
+                    self.blink_show = True
+                    self.update_blit = True
+                    self.__has_focus = True
+                    return
+
+                # 退格键,删除光标之前的元素
+                case "backspace":
+                    if self.__cursor_index > 0:  # 确保光标不在最前面
+                        # 删除光标前一个字符
+                        new_text = new_text[:self.__cursor_index - 1] + new_text[self.__cursor_index:]
+                        self.__cursor_index -= 1  # 光标前移
+                        self.blink_tick = 0
+                        self.blink_show = True
+                    else:
+                        return
+                # 撤销后一位元素
+                case "delete":
+                    if self.__cursor_index < len(new_text):  # 确保光标不在最后面
+                        # 删除光标后一个字符
+                        new_text = new_text[:self.__cursor_index] + new_text[self.__cursor_index + 1:]
+                        # 光标位置不需要移动
+                        self.blink_tick = 0
+                        self.blink_show = True
+                    else:
+                        return
+
+                case _:
+                    # self.__cursor_index += 1
+                    return
+
+            # 调用函数进行更新
+            updated = self.update_element_by_uuid(self.__cached_result, target_uuid, new_text)
+            if updated:
+                self.__focus_node["text"] = str(new_text)
+                self.update_blit = True
+                self.__has_focus = True
 
     def keyboard_pressed(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """键盘长按事件"""
@@ -424,7 +442,7 @@ class GameDialog:
         attrs = node.get("attrs", {})
         dom_id = attrs.get("id")
         tag = node.get("tag")
-        node_text = node.get("text")
+        node_text = node.get("text","")
         children = node.get("children", [])
         view_height = self.__render_offset[1]  # 可视区域
 
@@ -633,7 +651,6 @@ class GameDialog:
                 if i_h > 0:
                     input_height = i_h
 
-
             is_disabled = "disabled" in attrs
             is_focused = node is self.__focus_node
 
@@ -652,7 +669,6 @@ class GameDialog:
             # 滚动偏移初始化
             if "__offset_x" not in attrs:
                 attrs["__offset_x"] = 0
-
 
             input_surface = pygame.Surface((input_width, input_height), pygame.SRCALPHA)
             if "background-image" not in attrs:  # 仅没有背景图像的时候生效

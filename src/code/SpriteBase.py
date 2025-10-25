@@ -141,6 +141,8 @@ class SpriteBase:
         }
 
         self.__register = []
+        """ 获取到自动注册的事件列表 """
+
         # 如果传递了事件, 那么就自动注册事件
         if event_name is not None:
             from src.manager.GameEvent import GameEvent
@@ -148,6 +150,10 @@ class SpriteBase:
             # 保存自动注册的事件名称
             self.__register = [f"{event_name}_{self.UID}" for event_name in event_name[0]]
             GameEvent.add([f"{event_name}_{self.UID}" for event_name in event_name[0]], event_name[1], self)
+
+    def get_register(self):
+        """返回当前自动注册的事件列表"""
+        return self.__register
 
     def get_status(self):
         """返回当前精灵的属性"""
@@ -550,7 +556,9 @@ class SpriteBase:
 
     def destroy(self):
         """由每个子精灵自己实现的销毁方法"""
-        pass
+        from src.manager.GameEvent import GameEvent
+        for event_name in self.__register:
+            GameEvent.remove(event_name)
 
     def start_battle(self):
         """开始触发战斗"""

@@ -55,6 +55,17 @@ class SourceManager:
     cfg_root_path = "resources"
     """资源包目录"""
 
+    audio_root_path = "audio"
+    """音效根目录"""
+    audio_dream_bgm_path = r"audio\BGM"
+    """梦幻背景音乐根目录"""
+    audio_dream_source_path = r"audio\SE"
+    """梦幻音效根目录"""
+    audio_zfs_bgm_path = r"audio\zfs_BGM"
+    """zfs背景音乐根目录"""
+    audio_zfs_source_path = r"audio\zfsSE"
+    """zfs音效根目录"""
+
     log_root_path = "logs"
 
     @staticmethod
@@ -80,6 +91,12 @@ class SourceManager:
         SourceManager.cfg_root_path = os.path.join(game_root, "resources")
 
         SourceManager.log_root_path = os.path.join(game_root, "logs")
+
+        SourceManager.audio_root_path = os.path.join(game_root, "audio")
+        SourceManager.audio_dream_bgm_path = os.path.join(game_root, "audio/BGM")
+        SourceManager.audio_dream_source_path = os.path.join(game_root, "audio/SE")
+        SourceManager.audio_zfs_bgm_path = os.path.join(game_root, r"audio\zfs_BGM")
+        SourceManager.audio_zfs_source_path = os.path.join(game_root, r"audio\zfsSE")
 
     @staticmethod
     def load_gif_as_atlas(gif_path, frame_padding=2):

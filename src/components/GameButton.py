@@ -17,6 +17,7 @@ from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
+from src.system.GameMusic import GameMusicManager
 
 
 class GameButton(SpriteBase):
@@ -187,6 +188,7 @@ class GameButton(SpriteBase):
         """处理鼠标按下事件"""
         self.is_pressed = True
         self.need_redraw = True
+        GameMusicManager.play_sound("mbutton")
         return False
 
     def mouse_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
