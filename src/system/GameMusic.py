@@ -22,7 +22,7 @@ class GameMusicManager:
     _sound_paths: Dict[str, str] = {}  # 音效路径字典
 
     # 音量控制 (0.0 ~ 1.0)
-    bgm_volume: float = 0.2
+    bgm_volume: float = 0.05
     sound_volume: float = 0.3
 
     # 开关控制

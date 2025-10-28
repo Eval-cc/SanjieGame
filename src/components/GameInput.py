@@ -14,11 +14,12 @@ import pygame
 from pygame.key import ScancodeWrapper
 
 from src.code.SpriteBase import SpriteBase
+from src.components.GameComponentBase import GameComponentBase
 from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 
 
-class GameInput(SpriteBase):
+class GameInput(SpriteBase,GameComponentBase):
     def __init__(self, render_surface: pygame.Surface, rect: pygame.Rect, placeholder: str = "", font_size: int = 16,
                  text_color: str = "#000000", bg_color: str = "#FFFFFF",
                  border_color: str = "#000000", border_width: int = 1, is_password: bool = False,
@@ -355,9 +356,3 @@ class GameInput(SpriteBase):
         self._field_rect.x = self.offset[0] + x
         self._field_rect.y = self.__field_size[1] // 2 + self.rect.y
         self.need_redraw = True
-        # self.rect.x = self.offset[0] + x + self.__field_size[0]
-        # self.rect.y = self.offset[1] + y
-        # self.need_redraw = True
-        #
-        # self._field_rect.x = self.offset[0] + x
-        # self._field_rect.y = self.__field_size[1] // 2 + self.rect.y

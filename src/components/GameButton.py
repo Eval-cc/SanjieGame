@@ -13,6 +13,7 @@
 from typing import Dict, Tuple, Optional, Callable
 import pygame
 from src.code.SpriteBase import SpriteBase
+from src.components.GameComponentBase import GameComponentBase
 from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
@@ -20,7 +21,7 @@ from src.manager.SourceManager import SourceManager
 from src.system.GameMusic import GameMusicManager
 
 
-class GameButton(SpriteBase):
+class GameButton(SpriteBase,GameComponentBase):
     def __init__(self, render_surface: pygame.Surface, rect: pygame.Rect, text: str = "", font_size: int = 16,
                  text_color: str = "#000000", bg_color: str = "#FFFFFF",
                  border_color: str = "#000000", border_width: int = 1,

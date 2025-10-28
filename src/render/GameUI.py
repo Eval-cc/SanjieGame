@@ -336,8 +336,7 @@ class GameUI(SpriteBase):
             move_fun = target.get("mouse_move")
             if not move_fun:
                 return False
-            move_fun()
-            return False
+            return move_fun()
         return True
 
     def mouse_enter(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):

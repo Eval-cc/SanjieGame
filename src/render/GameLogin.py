@@ -23,7 +23,10 @@ from functools import partial
 from src.character.Player import Player
 from src.code.SpriteBase import SpriteBase
 from src.components.GameButton import GameButton
+from src.components.GameCheckBox import GameCheckBox
+from src.components.GameComponentBase import GameComponentBase
 from src.components.GameInput import GameInput
+from src.components.GameSlider import GameSlider
 from src.manager.GameFont import GameFont
 from src.manager.GameMapManager import GameMapManager
 from src.manager.SourceManager import SourceManager
@@ -62,10 +65,9 @@ class GameLogin(SpriteBase):
         # ========== 第三阶段：启动异步加载 ==========
         self._start_async_loading()
 
-
     def _load_static_background(self):
         """立即加载静态背景图"""
-        __rand_bg = [f"zfs_bg{i}.png" for i in range(1, 13)] # 随机静态背景
+        __rand_bg = [f"zfs_bg{i}.png" for i in range(1, 13)]  # 随机静态背景
         selected_bg = choice(__rand_bg)
         self.static_bg = SourceManager.load(
             os.path.join(SourceManager.ui_root_path, "Pictures", selected_bg),
@@ -164,11 +166,12 @@ class GameLogin(SpriteBase):
                                                            "drag": True,
                                                            "drag_rect": ["auto", "auto", "-25px", 30],
                                                            "move_callback": self.login_ui_move,
+                                                           "mouse_move": lambda: True,
                                                            "show": True,
                                                            "bubble": True
                                                        }, sort=True)
 
-        self.__components: List[Union["GameInput", "GameButton"]] = []
+        self.__components: List[Union["GameComponentBase"]] = []
 
         self.user_name = GameInput(self.gm.game_win, pygame.Rect([login_ui_rect.x, login_ui_rect.y, 170, 30]),
                                    placeholder="请输入账号", offset=(10, 50), bg_color="#000000", text_color="#FFFFFF",
@@ -205,10 +208,52 @@ class GameLogin(SpriteBase):
             bg_press_image=SourceManager.ui_system_path + "/gw_b2.png",
             offset=(110, 140)
         )
+        # 创建滑块实例
+        self.music_slider = GameSlider(
+            self.gm.game_win,  # 渲染表面
+            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 150, 30),  # 位置和大小
+            # rect=pygame.Rect(100, 100, 200, 30),  # 滑块轨道的位置和大小 (x, y, width, height)
+            min_value=0,  # 最小值
+            max_value=100,  # 最大值
+            initial_value=round(GameMusicManager.bgm_volume * 100),  # 初始值
+            bg_color="#CCCCCC",  # 轨道背景颜色
+            slider_color="#666666",  # 滑块颜色
+            active_slider_color="#333333",  # 滑块激活时的颜色
+            border_color="#000000",  # 边框颜色
+            value_color="#FFFFFF",
+            border_width=1,  # 边框宽度
+            slider_width=20,  # 滑块宽度
+            slider_height=30,  # 滑块高度
+            show_value=True,  # 是否显示当前值
+            value_format="{:.0f}%",  # 值显示格式
+            offset=(0, login_ui_rect.height - 60)  # 位置偏移量
+        )
+        self.custom_toggle = GameCheckBox(
+            self.gm.game_win,  # 渲染表面
+            # rect=pygame.Rect(100, 200, 200, 30),
+            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 120, 30),  # 位置和大小
+            text="是否播放音乐",
+            is_checked=True,
+            is_radio=True,
+            font_size=12,
+            text_color="#FF0000",  # 红色文本
+            bg_color="#FFFFFF",  # 白色背景
+            border_color="#00FF00",  # 绿色边框
+            check_color="#0000FF",  # 蓝色选中标记
+            hover_color="#FFFF00",  # 黄色悬停背景
+            border_width=2,
+            check_width=3,
+            bg_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface((0, 0, 28, 28)),
+            bg_check_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface(
+                (56, 0, 28, 28)),
+            offset=(0, login_ui_rect.height - 30)
+        )
         self.__components.append(self.user_name)
         self.__components.append(self.user_pwd)
         self.__components.append(self.enter_game)
         self.__components.append(self.enter_game_offline)
+        self.__components.append(self.music_slider)
+        self.__components.append(self.custom_toggle)
 
         game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
@@ -309,6 +354,19 @@ class GameLogin(SpriteBase):
 
         self.enter_game_offline.set_on_click(on_button_click_offline)
 
+        # 设置值改变时的回调函数
+        def on_music_volume_changed(value):
+            GameMusicManager.set_bgm_volume(round(value / 100, 2))
+
+        self.music_slider.set_on_value_changed(on_music_volume_changed)
+
+        def on_change_music(e):
+            if e:
+                GameMusicManager.resume_bgm()
+            else:
+                GameMusicManager.pause_bgm()
+
+        self.custom_toggle.set_on_toggle(on_change_music)
 
     def _update_frame_duration(self):
         """更新帧持续时间"""

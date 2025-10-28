@@ -78,7 +78,7 @@ class Player(SpriteBase):
         # 追加到寻路的列表
         GameManager.find_path_list.append({
             "get_pos": self.get_pos,
-            "move": self.set_path
+            "move": self.set_path,
         })
 
         self.update_blit = False
