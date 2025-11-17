@@ -10,6 +10,7 @@
 @Desc    : 异步登录服务
 """
 import threading
+import requests
 from typing import Callable, Optional
 from src.manager.GameLogManger import GameLogManager
 from src.system.GameToast import GameToastManager
@@ -95,7 +96,6 @@ class LoginServer:
 
         def _login_task():
             try:
-                import requests
                 response = requests.post(
                     f"{self.server_url}/login",
                     json={"username": username, "password": password},

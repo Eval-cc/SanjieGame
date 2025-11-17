@@ -134,6 +134,7 @@ class NpcSprite(SpriteBase):
 
     def load_animations(self):
         """一次性加载NPC的站立和移动动画（不做偏移量计算）"""
+
         # 加载每一帧的图像
         def load_frames(texture, model, directions):
             frames_by_dir = {}
@@ -144,12 +145,12 @@ class NpcSprite(SpriteBase):
             fw, fh = image.get_width() // cols, image.get_height() // rows
 
             # 遍历每个方向
-            for dir_val in directions:
+            for _dir_idx, dir_val in enumerate(directions):
                 d_idx = dir_val - 1
                 if d_idx >= rows:
                     continue
                 # 自动忽略透明像素
-                first_frame = image.subsurface((0, d_idx * fh, fw, fh))
+                first_frame = image.subsurface((0, _dir_idx * fh, fw, fh))
                 self.rect = first_frame.get_bounding_rect()
                 # 保存为检查NPC范围的Rect, 用于检查触发点击 或者 主角是否超出了NPC的这个范围
                 self.range_rect = pygame.Rect(self.rect.x - 30, self.rect.y - 30, self.rect.width + 60,
@@ -230,7 +231,7 @@ class NpcSprite(SpriteBase):
         # cpos = self.rect.center
         # # 渲染背景特效
         # self.eff_animator_floor.render(cpos[0], cpos[1] + 20, center=True)
-
+        #
         # 渲染精灵
         current_frame = self.animator.get_frame()
         if current_frame and not self.has_behind:
@@ -260,12 +261,14 @@ class NpcSprite(SpriteBase):
         render_x = self.rect.x
         render_y = self.rect.y
 
-        # if self.has_behind:
-        #     current_frame = self.animator.get_frame()
-        #     if current_frame:
-        #         # 使用统一的偏移量进行渲染
-        #         GameManager.game_win.blit(current_frame, (render_x, render_y),
-        #                                   (0, 0, current_frame.width, current_frame.height - 30))
+        if self.has_behind:
+            # 渲染精灵
+            current_frame = self.animator.get_frame()
+            if current_frame:
+                # 使用统一的偏移量进行渲染
+                a = current_frame.copy()
+                a.set_alpha(150)
+                GameManager.game_win.blit(a, (render_x, render_y))
 
         # 绘制路径点和连接线
         if GameManager.has_debug_render:
@@ -388,21 +391,28 @@ class NpcSprite(SpriteBase):
         """
         判断是否需要检查超距离之后关闭对话UI
         """
-        if not self.has_dialog:
-            return
         u_player: SpriteBase = GameManager.get("主角")
         if u_player:
             play_pos = u_player.get_pos_world()
-            # 计算 NPC 区域边界
-            npc_left = self.position[0] - self.rect.width / 2
-            npc_right = self.position[0] + self.rect.width / 2
-            npc_top = self.position[1] - self.rect.height / 2
-            npc_bottom = self.position[1] + self.rect.height / 2
+            camera_pos = GameManager.game_camera.get_position()
+            px = play_pos[0] - camera_pos[0]
+            py = play_pos[1] - camera_pos[1]
+            if self.range_rect.collidepoint(px,py):
+                # print(f"碰到了:{self.name}")
+                # 获取玩家脚部位置（通常是玩家坐标的底部）
+                player_foot_y = play_pos[1] + play_pos[3]  # 假设height是精灵高度
 
-            # 判断主角是否在 NPC 范围内
-            self.has_behind = npc_top <= play_pos[1] <= npc_bottom and npc_left <= play_pos[0] <= npc_right
+                # 获取NPC的中心位置
+                npc_center_y = self.position[1] + self.height / 2
+                self.has_behind = player_foot_y > npc_center_y
+                # 如果玩家的脚在NPC中心的下方，视为在背面
+                # if self.has_behind:
+                #     print(f"玩家在NPC背面:{self.name}")
+            else:
+                self.has_behind = False
 
-            play_pos = u_player.get_pos_world()
+            if not self.has_dialog:
+                return
             npc_pos = self.get_pos_world()
             diff_distance = 200
             # 距离太远的不触发点击事件
@@ -485,14 +495,14 @@ class NpcSprite(SpriteBase):
         GameMapManager.CURR_BATTLE_NPC_UID.append(self.UID)
         arr = []
         # 创建战斗用的NPC副本
-        for i in range(2):  # 创建3个副本
+        for i in range(20):  # 创建3个副本
             battle_npc = GameMapManager.add_npc(self.ID, self.__g_pos[0], self.__g_pos[1], self.direction)
             battle_npc.load_battle_anim("enemy", self.battle_texture, self.__npc_data)
             battle_npc.sprite_state = SpriteState.ATTACK
             battle_npc.battle_state = True
             arr.append(battle_npc)
         # 触发战斗场景
-        BattleManager.battle_start(GameManager, GameManager.get("主角"), arr)
+        BattleManager.battle_start(GameManager.get("主角"), arr)
         arr.clear()
 
     def destroy(self):

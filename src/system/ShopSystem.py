@@ -69,17 +69,17 @@ class ShopSystem:
         game_ui: GameUI = self.gm.get("游戏UI")
 
         # 道具锁定框
-        self.item_lock = SourceManager.surface_cale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
+        self.item_lock = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
                                                     [20, 20])
         # 道具描述UI的道具图片背景
-        self.icon_item_bg = SourceManager.surface_cale(
+        self.icon_item_bg = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/icon_skill_bg.png"), [60, 60])
 
-        shop_left_bg = SourceManager.surface_cale(SourceManager.load(f"{SourceManager.ui_system_path}/window_shop.png"),
+        shop_left_bg = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/window_shop.png"),
                                                   [250, self.shop_size[1] - 30])
         shop_right_bg = SourceManager.load(f"{SourceManager.ui_system_path}/window_empty.png")
-        shop_right_bg = SourceManager.surface_cale(shop_right_bg, [250, 290])
-        dialog_title = SourceManager.surface_cale(
+        shop_right_bg = SourceManager.ssurface_scale(shop_right_bg, [250, 290])
+        dialog_title = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"), [self.shop_size[0], 32])
 
         shop_bg = pygame.Surface(tuple(self.shop_size), pygame.SRCALPHA)

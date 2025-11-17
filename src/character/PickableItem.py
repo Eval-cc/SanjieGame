@@ -13,13 +13,11 @@ from typing import Dict, TYPE_CHECKING
 
 import pygame
 import random
-import uuid
 import math
 from typing import List, Tuple
 
 from src.code.Enums import SpriteLayer
 from src.code.SpriteBase import SpriteBase
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.GameManager import GameManager
 from src.manager.SourceManager import SourceManager
@@ -27,12 +25,13 @@ from src.system.Animator import Animator
 
 if TYPE_CHECKING:
     from src.code.Item import Item
+    from src.network.GameWorldServer import GameWorldServer
 
 
 class PickableItem(SpriteBase):
-    def __init__(self, item: "Item", world_x: int, world_y: int):
+    def __init__(self, item: "Item", world_x: int, world_y: int, send_global: bool = False):
         super().__init__([[f"pick_item_点击事件"], [1]])
-        self.item = item
+        self.item: "Item" = item
 
         rand_name = "pick_item1" if item.count > 30 else "pick_item2" if item.type != 1 else "pickable_item"
         self.image = SourceManager.load(fr"Graphics\System\{rand_name}.png", [32, 32]).convert_alpha()
@@ -72,6 +71,24 @@ class PickableItem(SpriteBase):
             "pickable_item", 2, 10
         )
         self.eff_animator_stick.play("pickable_item", speed=0.05, loop=True)
+        if send_global:
+            w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+            if w_server:
+                w_server.send_msg('player_action', {
+                    "actionData": {
+                        'itemData': {
+                            "puid": self.UID,
+                            "uid": self.item.UID,
+                            "id": self.item.ID,
+                            "name": self.item.name,
+                            "count": self.item.count,
+                            "pick_rand_name": rand_name,
+                            "world_x": world_x,
+                            "world_y": world_y
+                        },
+                        'type': "1",
+                    }
+                })
 
     def calculate_bezier_point(self, t: float, points: List[Tuple[float, float]]) -> List[float]:
         """优化后的二次贝塞尔曲线计算（带子采样抗锯齿）
@@ -183,8 +200,21 @@ class PickableItem(SpriteBase):
         u_player = GameManager.get("主角")
         u_player.bag.add_item_exist(self.item)
         self.destroy()
-
+        return False
 
     def destroy(self):
-        GameManager.remove(f"pick_item_{self.UID}")  # 从游戏管理器中移除
-        GameEvent.remove(f"pick_item_点击事件_{self.UID}")  # 移除点击事件
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if w_server:
+            w_server.send_msg('player_action', {
+                "actionData": {
+                    'itemData': {
+                        "puid": self.UID,
+                        "uid": self.item.UID,
+                        "id": self.item.ID,
+                        "name": self.item.name,
+                    },
+                    'type': "2",  # 通知服务器. 这个道具已经被捡起来了
+                }
+            })
+        super().destroy()
+        GameManager.remove(self)  # 从游戏管理器中移除

@@ -9,7 +9,7 @@
 @Date    ：2025/2/14 下午2:05
 @Describe: 角色类
 """
-
+import time
 from functools import partial
 from typing import List, TYPE_CHECKING
 
@@ -18,16 +18,17 @@ import pygame
 from src.code.GameBag import GameBag
 from src.manager.GameLogManger import GameLogManager
 from src.necessary.GameBattle import BattleManager
-from src.network.GameWorldServer import GameWorldServer
 from src.system.Animator import Animator
 from src.code.SpriteBase import SpriteBase
 from src.manager.GameFont import GameFont
 from src.manager.GameManager import GameManager
 from src.manager.SourceManager import SourceManager
 from src.code.Enums import SpriteState
+from src.system.GameTipDialog import GameDialogBoxManager
 
 if TYPE_CHECKING:
     from src.render.GameUI import GameUI
+    from src.network.GameWorldServer import GameWorldServer
 
 STATUS_POS = {
     "name": [130, 30],
@@ -74,11 +75,12 @@ class Player(SpriteBase):
         self.has_dialog = False
 
         # 挂载到相机上, 让相机跟随当前角色
-        GameManager.game_camera.mounted(self)
+        # GameManager.game_camera.mounted(self)
         # 追加到寻路的列表
         GameManager.find_path_list.append({
             "get_pos": self.get_pos,
             "move": self.set_path,
+            "stop_moving": self.stop_moving
         })
 
         self.update_blit = False
@@ -153,7 +155,7 @@ class Player(SpriteBase):
         _game_tool_ui1_ = [150, 150]
         game_tool = ui1_1.subsurface((_game_tool_ui1_[0], _game_tool_ui1_[1], max(ui1_1.width - _game_tool_ui1_[0], 0),
                                       max(ui1_1.height - _game_tool_ui1_[1], 0)))
-        game_tool = SourceManager.surface_cale(game_tool, [120, 120])
+        game_tool = SourceManager.ssurface_scale(game_tool, [120, 120])
         game_ui.load_system_ui(game_tool,
                                [250, 400],
                                # "middle",
@@ -166,7 +168,7 @@ class Player(SpriteBase):
                                })
 
         # 小地图
-        _game_map = SourceManager.surface_cale(ui1_1.subsurface((0, 0, 150, 150)), [100, 100])
+        _game_map = SourceManager.ssurface_scale(ui1_1.subsurface((0, 0, 150, 150)), [100, 100])
         game_ui.load_system_ui(_game_map,
                                pos=[0, 0],
                                options=
@@ -187,67 +189,73 @@ class Player(SpriteBase):
                                }, sort=True)
 
     def __init_status(self, data: dict):
-        self.idx = data.get("id")
-        self.healthy = data.get("healthy")
-        self.max_healthy = data.get("max_healthy")
-        self.mana = data.get("mana")
-        self.attack = data.get("attack")
-        self.defense = data.get("defense")
-        self.attack_speed = data.get("attack_speed")
-        # 给主角挂上背包
-        self.bag = GameBag(GameManager)
-        for __ii in data.get("items", []):
-            self.bag.add_item(str(__ii))  # 送一把新手铁剑
+        try:
+            self.idx = data.get("id")
+            self.healthy = data.get("healthy")
+            self.max_healthy = data.get("healthy")
+            self.mana = data.get("mana")
+            self.attack = data.get("attack")
+            self.defense = data.get("defense")
+            self.attack_speed = data.get("attack_speed")
+            # 给主角挂上背包
+            self.bag = GameBag(GameManager)
 
-        self.name = data.get("name")
-        self.current_path_index = 0  # 当前路径索引
-        # 是否触发了对话
-        self.has_dialog = False
+            _item_arr = data.get("items", "").split("|")
+            for __ii in _item_arr:
+                # 格式  page, x, y, id, 数量
+                _item = [int(i) for i in __ii.split(",")]
+                self.bag.add_item(str(_item[3]), _item[4], target_page=_item[0], target_x=_item[1],
+                                  target_y=_item[2])
 
-        x, y = GameManager.scene_to_global_pos_box(self.__g_pos[0], self.__g_pos[1])
-        # self.rect.x, self.rect.y = x, y
-        self.position = [x * GameManager.game_box_size, y * GameManager.game_box_size]  # 实际的像素坐标，乘以32格子大小
-        self.scene_pos = [x, y]
-        self.has_behind = False
-        self.sprite_state = SpriteState.IDLE
+            self.name = data.get("name")
+            self.current_path_index = 0  # 当前路径索引
+            # 是否触发了对话
+            self.has_dialog = False
 
-        self.stand_model = data.get("stand_model")
-        self.move_model = data.get("move_model")
-        self.stand_direction = data.get("stand_direction")
-        self.move_direction = data.get("move_direction")
+            x, y = GameManager.scene_to_global_pos_box(self.__g_pos[0], self.__g_pos[1])
+            # self.rect.x, self.rect.y = x, y
+            self.position = [x * GameManager.game_box_size, y * GameManager.game_box_size]  # 实际的像素坐标，乘以32格子大小
+            self.scene_pos = [x, y]
+            self.has_behind = False
+            self.sprite_state = SpriteState.IDLE
 
-        # texture_pairs = [
-        #     ["@@@@进阶夜罗刹", "@@@@进阶夜罗刹_move"],
-        #     ["NPC小花", "NPC小花_move"],
-        #     ["NPC商会主管", "NPC商会主管_move"],
-        #     ["NPC李善人", "NPC李善人_move"],
-        #     ["NPC酒店老板", "NPC酒店老板_move"],
-        #     ["NPC国子监祭酒", "NPC国子监祭酒_move"],
-        # ]
-        # # 随机选择一个纹理组合
-        # selected_textures = random.choice(texture_pairs)
+            user_actor_data = SourceManager.get_csv("user_actor", data.get("anim_model"))
 
-        # 赋值给实例变量
-        self.stand_texture = data.get("stand_texture")
-        self.move_texture = data.get("move_texture")
+            self.stand_model = [int(i) for i in user_actor_data.get("站立轴").split(",")]
+            self.move_model = [int(i) for i in user_actor_data.get("移动轴").split(",")]
+            self.stand_direction = [int(i) for i in user_actor_data.get("站立方向").split(",")]
+            self.move_direction = [int(i) for i in user_actor_data.get("移动方向").split(",")]
 
-        # self.stand_texture = "@@@@进阶夜罗刹"
-        # self.move_texture = "@@@@进阶夜罗刹_move"
-        # 设置方向表，用于后续方向匹配（合并站立/移动方向，以保证完整性）
-        self.supported_directions = sorted(set(self.stand_direction + self.move_direction))
+            # 赋值给实例变量
+            self.stand_texture = user_actor_data.get("站立模型")
+            self.move_texture = user_actor_data.get("移动模型")
+            self.scale_texture = float(user_actor_data.get("缩放"))
 
-        target = "actor"
-        # anim_name = "进阶夜罗刹"
-        # __npc_data = {
-        #     f"战斗_攻击2": "13",
-        #     f"战斗_击飞": "4",
-        #     f"战斗_施法": "16",
-        #     f"战斗_死亡": "12",
-        #     f"战斗_挨打": "1"
-        # }
-        anim_name = data.get("anim_name")
-        __npc_data = data.get("npc_data")
-        self.load_battle_anim(target, anim_name, __npc_data)
+            # 设置方向表，用于后续方向匹配（合并站立/移动方向，以保证完整性）
+            self.supported_directions = sorted(set(self.stand_direction + self.move_direction))
+
+            target = "actor"
+            __npc_data = {
+                f"战斗_攻击2": user_actor_data.get("战斗_攻击"),
+                f"战斗_击飞": user_actor_data.get("战斗_击飞"),
+                f"战斗_施法": user_actor_data.get("战斗_施法"),
+                f"战斗_死亡": user_actor_data.get("战斗_死亡"),
+                f"战斗_挨打": user_actor_data.get("战斗_挨打"),
+            }
+            anim_name = user_actor_data.get("战斗模型")
+            self.load_battle_anim(target, anim_name, __npc_data)
+        except AttributeError as ae:
+            GameDialogBoxManager.dialog(f"初始化失败 {ae}")
+            # GameLogManager.log_service_error(f"玩家初始化失败: {ae}")
+            GameManager.logout()
+            time.sleep(1)
+            raise ae
+        except Exception as e:
+            GameDialogBoxManager.dialog(f"初始化失败 {e}")
+            # GameLogManager.log_service_error(f"玩家初始化失败: {e}")
+            GameManager.logout()
+            time.sleep(1)
+            raise e
 
     def __extract_frames_from_sprite(self):
         """从精灵表中提取指定帧并存储到类属性中"""
@@ -269,10 +277,10 @@ class Player(SpriteBase):
 
             new_surface = pygame.Surface([len(frame_coords) * _size, _size], pygame.SRCALPHA)
             # 创建新的Surface对象 (足够容纳两个帧)
-            btn_sur = SourceManager.surface_cale(sprite_sheet.subsurface(frame_coords), [_size, _size])
+            btn_sur = SourceManager.ssurface_scale(sprite_sheet.subsurface(frame_coords), [_size, _size])
             new_surface.blit(btn_sur, (0, 0))
             if frame_coords_1:
-                btn_sur1 = SourceManager.surface_cale(sprite_sheet.subsurface(frame_coords_1), [_size, _size])
+                btn_sur1 = SourceManager.ssurface_scale(sprite_sheet.subsurface(frame_coords_1), [_size, _size])
                 new_surface.blit(btn_sur1, (_size, 0))
             else:
                 # 没有指定高亮帧, 那么就改个透明度作为高亮帧
@@ -299,91 +307,101 @@ class Player(SpriteBase):
 
     def load_animations(self):
         """一次性加载NPC的站立和移动动画（不做偏移量计算）"""
+        try:
+            # 加载每一帧的图像
+            def load_frames(texture, model, directions):
+                frames_by_dir = {}
+                if not texture:
+                    return frames_by_dir
+                image = SourceManager.load(f"{SourceManager.ui_npc_path}/{texture}.png").convert_alpha()
+                # 模型是否有缩放
+                if self.scale_texture != 1:
+                    image = SourceManager.ssurface_scale(image, [image.get_width() * self.scale_texture,
+                                                                 image.get_height() * self.scale_texture])
+                cols, rows = model
+                fw, fh = image.get_width() // cols, image.get_height() // rows
 
-        # 加载每一帧的图像
-        def load_frames(texture, model, directions):
-            frames_by_dir = {}
-            if not texture:
+                # 遍历每个方向
+                for _dir_idx, dir_val in enumerate(directions):
+                    d_idx = dir_val - 1
+                    if d_idx >= rows:
+                        continue
+                    # 自动忽略透明像素
+                    first_frame = image.subsurface((0, _dir_idx * fh, fw, fh))
+                    self.rect = first_frame.get_bounding_rect()
+                    base_offset_x = self.rect.x
+                    base_offset_y = self.rect.y
+
+                    # 遍历每一列
+                    frames_by_dir[d_idx] = [
+                        image.subsurface((
+                            col * fw + base_offset_x,  # 使用基准偏移量
+                            d_idx * fh + base_offset_y,  # 使用基准偏移量
+                            self.rect.width,  # 使用bounding rect的宽度
+                            self.rect.height  # 使用bounding rect的高度
+                        ))
+                        for col in range(cols)
+                    ]
                 return frames_by_dir
-            image = SourceManager.load(f"{SourceManager.ui_npc_path}/{texture}.png")
-            cols, rows = model
-            fw, fh = image.get_width() // cols, image.get_height() // rows
 
-            # 遍历每个方向
-            for dir_val in directions:
-                d_idx = dir_val - 1
-                if d_idx >= rows:
-                    continue
-                # 自动忽略透明像素
-                first_frame = image.subsurface((0, d_idx * fh, fw, fh))
-                self.rect = first_frame.get_bounding_rect()
-                base_offset_x = self.rect.x
-                base_offset_y = self.rect.y
+            # 一次性加载两种动画
+            stand_frames = load_frames(self.stand_texture, self.stand_model, self.stand_direction)
+            move_frames = load_frames(self.move_texture, self.move_model, self.move_direction)
 
-                # 遍历每一列
-                frames_by_dir[d_idx] = [
-                    image.subsurface((
-                        col * fw + base_offset_x,  # 使用基准偏移量
-                        d_idx * fh + base_offset_y,  # 使用基准偏移量
-                        self.rect.width,  # 使用bounding rect的宽度
-                        self.rect.height  # 使用bounding rect的高度
-                    ))
-                    for col in range(cols)
-                ]
-            return frames_by_dir
+            # 添加到 Animator
+            for dir_idx, frames in stand_frames.items():
+                self.animator.add_animation(f"stand_{dir_idx}", len(frames), 2, frames)
+            for dir_idx, frames in move_frames.items():
+                self.animator.add_animation(f"move_{dir_idx}", len(frames), 3, frames)
 
-        # 一次性加载两种动画
-        stand_frames = load_frames(self.stand_texture, self.stand_model, self.stand_direction)
-        move_frames = load_frames(self.move_texture, self.move_model, self.move_direction)
-
-        # 添加到 Animator
-        for dir_idx, frames in stand_frames.items():
-            self.animator.add_animation(f"stand_{dir_idx}", len(frames), 2, frames)
-        for dir_idx, frames in move_frames.items():
-            self.animator.add_animation(f"move_{dir_idx}", len(frames), 3, frames)
-
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/化生唧唧歪歪.png"),
-            "化生唧唧歪歪", 5, 20
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/地府判官令.png"),
-            "地府判官令", 5, 15
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/@@@漫天花雨.png"),
-            "漫天花雨", 5, 19
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/龙宫龙卷雨击.png"),
-            "龙卷雨击", 2, 30
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/####兔子特效.png"),
-            "兔几", 5, 20
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/##呼风唤雨.png"),
-            "呼风唤雨", 5, 25
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/##魔浪滔天.png"),
-            "魔浪滔天", 5, 38
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/##特技-菩提.png"),
-            "菩提", 5, 15
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/化生紫气东来.png"),
-            "紫气东来", 5, 22
-        )
-        self.eff_animator_stick.surface_to_animation_row(
-            SourceManager.load(f"{SourceManager.ui_animation_path}/女儿情天恨海.png"),
-            "情天恨海", 5, 15
-        )
-        # 默认播放站立动画
-        self.animator.play(f"stand_{self.direction}", speed=0.15)
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/化生唧唧歪歪.png"),
+                "化生唧唧歪歪", 5, 20
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/地府判官令.png"),
+                "地府判官令", 5, 15
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/@@@漫天花雨.png"),
+                "漫天花雨", 5, 19
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/龙宫龙卷雨击.png"),
+                "龙卷雨击", 2, 30
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/####兔子特效.png"),
+                "兔几", 5, 20
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/##呼风唤雨.png"),
+                "呼风唤雨", 5, 25
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/##魔浪滔天.png"),
+                "魔浪滔天", 5, 38
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/##特技-菩提.png"),
+                "菩提", 5, 15
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/化生紫气东来.png"),
+                "紫气东来", 5, 22
+            )
+            self.eff_animator_stick.surface_to_animation_row(
+                SourceManager.load(f"{SourceManager.ui_animation_path}/女儿情天恨海.png"),
+                "情天恨海", 5, 15
+            )
+            # 默认播放站立动画
+            self.animator.play(f"stand_{self.direction}", speed=0.15)
+        except KeyboardInterrupt as ke:
+            GameDialogBoxManager.dialog(ke)
+            GameManager.logout()
+        except Exception as e:
+            GameDialogBoxManager.dialog(e)
+            GameManager.logout()
 
     def __str__(self):
         return f"主角:{self.name}"
@@ -489,9 +507,6 @@ class Player(SpriteBase):
             self.current_path_index += 1
 
             if self.current_path_index >= len(self.current_path):
-                w_server: "GameWorldServer" = GameManager.get_manager("w_server")
-                if w_server:
-                    w_server.send_stop()
                 self.stop_moving()
             else:
                 next_target = self.current_path[self.current_path_index]
@@ -511,6 +526,23 @@ class Player(SpriteBase):
             int(self.position[0] // GameManager.game_box_size),
             int(self.position[1] // GameManager.game_box_size)
         ]
+        # 通知服务器. 我移动了
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if w_server:
+            w_server.send_move()
+
+    def stop_moving(self):
+        super().stop_moving()
+        self.sprite_state = SpriteState.IDLE
+        # 更新全局格子坐标
+        self.scene_pos = [
+            int(self.position[0] // GameManager.game_box_size),
+            int(self.position[1] // GameManager.game_box_size)
+        ]
+        # 通知服务器. 我停止了
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if w_server:
+            w_server.send_stop()
 
     def set_path(self, path: List[tuple]):
         """设置移动路径(网格坐标)"""
@@ -519,8 +551,8 @@ class Player(SpriteBase):
             return
 
         # 如果已经在移动，则停止当前移动
-        if self.sprite_state == SpriteState.WALK:
-            self.stop_moving()
+        # if self.sprite_state == SpriteState.WALK:
+        #     self.stop_moving()
 
         # 将网格坐标转换为世界坐标
         self.current_path = [(x * GameManager.game_box_size, y * GameManager.game_box_size) for x, y in path]
@@ -532,6 +564,11 @@ class Player(SpriteBase):
             dx = self.current_path[0][0] - self.position[0]
             dy = self.current_path[0][1] - self.position[1]
             self.update_direction(dx, dy)
+
+        # 通知服务器. 我移动了
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if w_server:
+            w_server.send_move()
 
     def listen_keyboard(self):
         """决定是否允许触发事件"""
@@ -584,12 +621,9 @@ class Player(SpriteBase):
         返回当前角色的世界格子坐标
         :return:
         """
-        return (
-            int(self.position[0] // GameManager.game_box_size),
-            int(self.position[1] // GameManager.game_box_size)
-        )
+        return tuple(self.scene_pos)
 
-    def set_pos(self, x, y):
+    def set_pos(self, x: int, y: int):
         """设置角色位置"""
         self.position[0] = x
         self.position[1] = y
@@ -598,6 +632,7 @@ class Player(SpriteBase):
             int(self.position[0] // GameManager.game_box_size),
             int(self.position[1] // GameManager.game_box_size)
         ]
+        self.stop_moving()
 
     def start_battle(self):
         """隐藏一些ui"""

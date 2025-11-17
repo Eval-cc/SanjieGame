@@ -1,4 +1,4 @@
-# 🎮 梦幻西游·单机版 - Python复刻
+# 梦幻 - Python复刻版
 
 <div align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python">

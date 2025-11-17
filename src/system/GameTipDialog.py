@@ -9,28 +9,30 @@
 @Date    : 2025/10/22 12:34
 @Desc    : 游戏弹窗提示. 提供: 强提示. 以及 确认/取消 功能的回调
 """
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 import pygame
 
+from src.code.Enums import SpriteLayer
 from src.code.SpriteBase import SpriteBase
 from src.components.GameButton import GameButton
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.SourceManager import SourceManager
-from src.manager.GameManager import GameManager
 
+if TYPE_CHECKING:
+    from src.manager.GameManager import GameManager
 
 class _GameTipDialog(SpriteBase):
     def __init__(self):
-        super().__init__([["游戏UI点击事件"], ["1"]])
-        self.gm: "GameManager" = GameManager
+        super().__init__([["游戏弹窗点击事件"], ["1"]])
+        self.gm: "GameManager" = GameDialogBoxManager.gm
         self.rect = self.gm.game_win_rect
-        self.layer = 1999
+        self.layer = SpriteLayer.UI_DIALOG
+        # self.layer_order = 1999
 
         self._width = 200
         self._height = 230
-        dialog_title = SourceManager.surface_cale(
+        dialog_title = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
             [self._width, 32]).convert_alpha()
 
@@ -60,7 +62,7 @@ class _GameTipDialog(SpriteBase):
         self.cancel = None
         self.confirm_btn = GameButton(
             self.gm.game_win,  # 渲染表面
-            pygame.Rect(_rect.x + 30, _rect.y + _rect.height - 30, 60, 25),  # 位置和大小
+            pygame.Rect(_rect.x + 70, _rect.y + _rect.height - 30, 60, 25),  # 位置和大小
             "确认",
             font_size=10,
             text_color="#FFFFFF",
@@ -84,6 +86,10 @@ class _GameTipDialog(SpriteBase):
         )
         self.confirm_btn.set_on_click(lambda: self.btn_click(True))
         self.cancel_btn.set_on_click(lambda: self.btn_click(False))
+        # 设置为消息层, 确保弹出消息之后, 仅这两个ui能触发点击
+        self.confirm_btn.layer = SpriteLayer.UI_DIALOG
+        self.cancel_btn.layer = SpriteLayer.UI_DIALOG
+
         self.gm.add("游戏开窗UI", self)
 
         self.loading_mask = pygame.Surface(self.rect.size)
@@ -93,6 +99,8 @@ class _GameTipDialog(SpriteBase):
     def set_msg(self, msg: str, confirm: Any, cancel: Any):
         self.confirm = confirm
         self.cancel = cancel
+        # self.confirm_btn.enable = confirm is not None # 确认按钮需要确保能点击关闭弹窗
+        self.cancel_btn.enable = cancel is not None
         if confirm:
             self.confirm_btn.update_pos(self.render_rect.x + self.render_rect.width - 65,
                                         self.render_rect.y + self.render_rect.height - 30)
@@ -104,7 +112,7 @@ class _GameTipDialog(SpriteBase):
             return
         self._latest_msg = msg
         self.text_sur = GameFont.get_multiple_text(msg, self._width, self._height - 30, True, 12, "#FFFFFF")
-        self.text_size = GameFont.get_text_size(msg)
+        self.text_size = self.text_sur.size
 
     def render_sticky(self):
         self.gm.game_win.blit(self.loading_mask, self.rect)
@@ -112,6 +120,7 @@ class _GameTipDialog(SpriteBase):
         if self.text_sur:
             x = self.render_rect.x + (self.render_rect.width - self.text_size[0]) // 2
             y = self.render_rect.y + (self.render_rect.height - self.text_size[1]) // 2
+
             # 绘制文本（居中）
             self.gm.game_win.blit(self.text_sur, (x, y))
 
@@ -126,7 +135,6 @@ class _GameTipDialog(SpriteBase):
     def destroy(self):
         super().destroy()
         self.gm.remove(self)
-        # GameEvent.remove(f"游戏UI点击事件_{self.UID}")
         self._latest_msg = ""
         if self.confirm_btn:
             self.confirm_btn.destroy()
@@ -140,19 +148,32 @@ class _GameTipDialog(SpriteBase):
         if result:
             if self.confirm:
                 self.confirm()
+                self.destroy()
         else:
             if self.cancel:
                 self.cancel()
         self.destroy()
 
-
 class GameDialogBoxManager:
     _dialog_cls: "_GameTipDialog" = None
+    gm:"GameManager" = None
 
-    @staticmethod
-    def dialog(msg: str, confirm: Any = None, cancel: Any = None):
+    @classmethod
+    def Awake(cls, gm):
+        cls.gm = gm
+
+    @classmethod
+    def dialog(cls, msg: str, confirm: Any = None, cancel: Any = None):
         if GameDialogBoxManager._dialog_cls:
             GameDialogBoxManager._dialog_cls.set_msg(msg, confirm, cancel)
             return
         GameDialogBoxManager._dialog_cls = _GameTipDialog()
         GameDialogBoxManager._dialog_cls.set_msg(msg, confirm, cancel)
+
+    @classmethod
+    def has_dialog(cls):
+        """
+        是否存在全局消息提示
+        :return:
+        """
+        return cls._dialog_cls is not None

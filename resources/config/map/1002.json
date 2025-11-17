@@ -1,5 +1,24 @@
 {
-    "npc": [],
+    "npc": [
+        {
+            "id": 1,
+            "position": [
+                443,
+                1074
+            ],
+            "name": "二郎神",
+            "task": "to_shouyangshan"
+        },
+        {
+            "id": 3,
+            "position": [
+                2258,
+                335
+            ],
+            "name": "凤凰",
+            "task": ""
+        }
+    ],
     "pk": false,
     "scene_id": "1002",
     "scene_name": "化生寺",

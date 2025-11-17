@@ -93,7 +93,7 @@ class GameDialog:
             dialog_sur: pygame.Surface = game_ui.get_surface_ui("对话UI")
 
             if self.dialog_title is None or self.dialog_title.width != int(width):
-                self.dialog_title = SourceManager.surface_cale(
+                self.dialog_title = SourceManager.ssurface_scale(
                     SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
                     [int(width), 32]).convert_alpha()
 
@@ -502,7 +502,7 @@ class GameDialog:
                         clip_h = cbg_sur.height if clip_path_arr[3] == -1 else clip_path_arr[3]
                         cbg_sur = cbg_sur.subsurface((clip_x, clip_y, clip_w - clip_x, clip_h - clip_y))
                     if _cbg_w > 0 and _cbg_h > 0:
-                        cbg_sur = SourceManager.surface_cale(cbg_sur, [_cbg_w, _cbg_h])
+                        cbg_sur = SourceManager.ssurface_scale(cbg_sur, [_cbg_w, _cbg_h])
                     else:
                         _cbg_w, _cbg_h = cbg_sur.get_size()
                     if dom_id == "app":  # 根节点不跟随滚动.
@@ -594,7 +594,7 @@ class GameDialog:
 
                 btn_surface = self.__ui_cache_dict.get(f"ui_btn-bg_{node_text}")
                 if btn_surface is None:
-                    btn_surface = SourceManager.surface_cale(params["surface"],
+                    btn_surface = SourceManager.ssurface_scale(params["surface"],
                                                              [text_surface.width + 20, frame_size // 2.5])
                 btn_rect = btn_surface.get_rect()
                 btn_rect.x = render_x
@@ -634,7 +634,7 @@ class GameDialog:
                         self.__ui_cache_dict[f"ui_img_{curr_style["src"]}"] = img_surface
 
                     if curr_style.get("img-size"):
-                        img_surface = SourceManager.surface_cale(img_surface, curr_style.get("img-size", [0, 0]))
+                        img_surface = SourceManager.ssurface_scale(img_surface, curr_style.get("img-size", [0, 0]))
 
                 # 跳过不可视区域
                 self.blit_with_clipping(dialog_sur, img_surface, render_x, render_y, view_height)
@@ -882,7 +882,7 @@ class GameDialog:
                                             img_rect.centery = li_height // 2
                                         if img_surface.height > li_height:
                                             prop_w = li_height / img_surface.height
-                                            img_bak = SourceManager.surface_cale(img_surface,
+                                            img_bak = SourceManager.ssurface_scale(img_surface,
                                                                                  [round(img_surface.width * prop_w),
                                                                                   li_height])
                                             img_rect.y = 0

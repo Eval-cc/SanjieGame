@@ -269,9 +269,6 @@ class GameSlider(SpriteBase, GameComponentBase):
         if self.need_redraw:
             self.render()
 
-    def destroy(self):
-        GameEvent.remove(f"滑块拖动事件_{self.UID}")
-
     def update_pos(self, x: int, y: int):
         """
         更新组件位置

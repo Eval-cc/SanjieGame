@@ -14,7 +14,6 @@ from typing import Dict, Tuple, Optional, Callable
 import pygame
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
@@ -74,6 +73,8 @@ class GameButton(SpriteBase,GameComponentBase):
         # 缓存表面
         self.cached_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
         self.need_redraw = True
+        # 是否启用
+        self.enable = True
 
     def __str__(self):
         return self.text
@@ -187,6 +188,9 @@ class GameButton(SpriteBase,GameComponentBase):
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标按下事件"""
+        if not self.enable:
+            # 禁用了 不触发
+            return True
         self.is_pressed = True
         self.need_redraw = True
         GameMusicManager.play_sound("mbutton")
@@ -222,9 +226,6 @@ class GameButton(SpriteBase,GameComponentBase):
         """更新按钮状态"""
         if self.need_redraw:
             self.render()
-
-    def destroy(self):
-        GameEvent.remove(f"按钮点击事件_{self.UID}")
 
     def update_pos(self, x: int, y: int):
         """

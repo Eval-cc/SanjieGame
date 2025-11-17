@@ -19,7 +19,7 @@ from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 
 
-class GameInput(SpriteBase,GameComponentBase):
+class GameInput(SpriteBase, GameComponentBase):
     def __init__(self, render_surface: pygame.Surface, rect: pygame.Rect, placeholder: str = "", font_size: int = 16,
                  text_color: str = "#000000", bg_color: str = "#FFFFFF",
                  border_color: str = "#000000", border_width: int = 1, is_password: bool = False,
@@ -82,9 +82,9 @@ class GameInput(SpriteBase,GameComponentBase):
         self.on_change = None
         self.on_submit = None
 
-        # 在初始化方法中添加
-        self.ime_composing = False  # 是否正在输入法组合状态
-        self.composing_text = ""  # 输入法组合文本
+        # # 在初始化方法中添加
+        # self.ime_composing = False  # 是否正在输入法组合状态
+        # self.composing_text = ""  # 输入法组合文本
 
         GameEvent.add_input(self)
         # 初始化缓存表面
@@ -152,7 +152,7 @@ class GameInput(SpriteBase,GameComponentBase):
 
             # 裁剪文本表面
             visible_width = min(text_width, self.rect.width - 10)
-            cropped_surface = pygame.Surface((visible_width, self.rect.height - 4), pygame.SRCALPHA)
+            cropped_surface = pygame.Surface((visible_width, self.rect.height), pygame.SRCALPHA)
             cropped_surface.blit(text_surface, (-self.scroll_offset, 0))
             text_surface = cropped_surface
 
@@ -160,10 +160,11 @@ class GameInput(SpriteBase,GameComponentBase):
         text_y = (self.rect.height - text_surface.get_height()) // 2
         self.cached_surface.blit(text_surface, (5, text_y))
 
-        # 绘制光标（只在获得焦点、闪烁显示状态且不是密码框时显示）
+        # 绘制光标（只在获得焦点、闪烁显示状态时显示）
         if self.has_focus and self.blink_show:
             prefix = self.text[:self.cursor_index]
-            prefix_width = GameFont.get_text_size(prefix)[0] - self.scroll_offset
+            _w = GameFont.get_text_size(prefix)[0]
+            prefix_width = _w - self.scroll_offset
             cursor_x = max(5, min(5 + prefix_width, self.rect.width - 5))
             pygame.draw.line(
                 self.cached_surface,
@@ -181,29 +182,41 @@ class GameInput(SpriteBase,GameComponentBase):
         if self.field_surface:
             self.render_surface.blit(self.field_surface, self._field_rect)
 
-
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标点击事件"""
-        mouse_pos = event.get("mouse_pos", (0, 0))
-        if self.rect.collidepoint(mouse_pos):
-            for _com in GameEvent.all_input_pool():
-                if _com == self:
-                    continue
-                _com.blur()
 
-            self.has_focus = True
-            self._update_cursor_position(mouse_pos)
-            self.need_redraw = True
-            # 如果启动了密码模式, 就不允许输入文本
-            if not self.is_password:
-                pygame.key.start_text_input()  # 启用文本输入
-            pygame.key.set_text_input_rect(self.rect)  # 设置输入区域
-        else:
-            if self.has_focus:
-                self.has_focus = False
-                self.need_redraw = True
-                if self.on_submit and self.text:
-                    self.on_submit(self.text)
+        for _com in GameEvent.all_input_pool():
+            if _com == self:
+                continue
+            _com.blur()
+        mouse_pos = event.get("mouse_pos")
+        self.has_focus = True
+        self._update_cursor_position(mouse_pos)
+        self.need_redraw = True
+        # 如果启动了密码模式, 就不允许输入文本
+        if not self.is_password:
+            pygame.key.start_text_input()  # 启用文本输入
+        pygame.key.set_text_input_rect(self.rect)  # 设置输入区域
+        # mouse_pos = event.get("mouse_pos", (0, 0))
+        # if self.rect.collidepoint(mouse_pos):
+        #     for _com in GameEvent.all_input_pool():
+        #         if _com == self:
+        #             continue
+        #         _com.blur()
+        #
+        #     self.has_focus = True
+        #     self._update_cursor_position(mouse_pos)
+        #     self.need_redraw = True
+        #     # 如果启动了密码模式, 就不允许输入文本
+        #     if not self.is_password:
+        #         pygame.key.start_text_input()  # 启用文本输入
+        #     pygame.key.set_text_input_rect(self.rect)  # 设置输入区域
+        # else:
+        #     if self.has_focus:
+        #         self.has_focus = False
+        #         self.need_redraw = True
+        #         if self.on_submit and self.text:
+        #             self.on_submit(self.text)
 
     def _update_cursor_position(self, mouse_pos: Tuple[int, int]):
         """根据鼠标点击位置更新光标位置"""
@@ -242,7 +255,7 @@ class GameInput(SpriteBase,GameComponentBase):
 
         key_event = event.get("event")
         key = key_event.key
-        # unicode = key_event.unicode
+        unicode = key_event.unicode
 
         # 处理特殊按键
         if key == pygame.K_BACKSPACE:
@@ -273,11 +286,14 @@ class GameInput(SpriteBase,GameComponentBase):
         elif key == pygame.K_ESCAPE:
             self.blur()
         # 放在key_text 事件接收. 这里不要接收.会重复
-        # elif unicode:
-        #     # 直接接收所有unicode字符
-        #     self.text = self.text[:self.cursor_index] + unicode + self.text[self.cursor_index:]
-        #     self.cursor_index += len(unicode)
-        #     self._trigger_change()
+        elif unicode:
+            if self.is_password:
+                text_color = self.text_color if self.text else "#888888"
+                GameFont.add(unicode, font_size=self.font_size, font_color=text_color, mask_color=text_color)
+                # 直接接收所有unicode字符
+                self.text = self.text[:self.cursor_index] + unicode + self.text[self.cursor_index:]
+                self.cursor_index += len(unicode)
+                self._trigger_change()
 
         self.need_redraw = True
 
@@ -287,10 +303,11 @@ class GameInput(SpriteBase,GameComponentBase):
 
     def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         key_event = event.get("event")
-        self.text = self.text[:self.cursor_index] + key_event.text + self.text[self.cursor_index:]
-        self.cursor_index += len(key_event.text)
-        self._trigger_change()
-        self.need_redraw = True
+        if not self.is_password:
+            self.text = self.text[:self.cursor_index] + key_event.text + self.text[self.cursor_index:]
+            self.cursor_index += len(key_event.text)
+            self._trigger_change()
+            self.need_redraw = True
 
     def _reset_blink(self):
         """重置光标闪烁状态"""
@@ -337,11 +354,9 @@ class GameInput(SpriteBase,GameComponentBase):
         pygame.key.stop_text_input()
 
     def destroy(self):
-        if self.has_focus:
-            pygame.key.stop_text_input()
-        for e in ["输入框点击事件", "输入框键盘按下事件", "输入框键盘抬起事件", "输入框键盘长按事件",
-                  "输入框候选字事件"]:
-            GameEvent.remove(f"{e}_{self.UID}")
+        super().destroy()
+        # if self.has_focus:
+        #     pygame.key.stop_text_input()
         GameEvent.remove_input(self)
 
     def update_pos(self, x: int, y: int):

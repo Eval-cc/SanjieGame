@@ -14,7 +14,7 @@ import pygame
 import pygame.freetype
 import re
 import os
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
@@ -33,6 +33,11 @@ class GameFont:
     __default_font_path: List[str] = []
 
     win_main: None
+
+
+    @classmethod
+    def instance(cls):
+        return cls
 
     @staticmethod
     def load(win_main):
@@ -85,8 +90,10 @@ class GameFont:
         return result
 
     @staticmethod
-    def _hex_color_to_rgb__DEPRE(hex_str: str) -> tuple | str:
-        """将十六进制的颜色转为 rgb，如果输入不是以#开头的6位十六进制颜色字符串，则直接返回原参数,, """
+    def _hex_color_to_rgb__deprecate(hex_str: str) -> tuple | str:
+        """将十六进制的颜色转为 rgb，如果输入不是以#开头的6位十六进制颜色字符串，则直接返回原参数,,
+        弃用API
+        """
         if hex_str is None:
             return 0, 0, 0
         if not isinstance(hex_str, str) or not hex_str.startswith('#') or len(hex_str) != 7:
@@ -152,18 +159,20 @@ class GameFont:
 
     @staticmethod
     def add(text: str, font_size: int = 13, font_color: tuple | str = (255, 255, 255), font_path: str = None,
-            mask_color: tuple | str = (0, 0, 0)):
-        """将字体加载并添加到全局字体管理器"""
+              mask_color: tuple | str = (0, 0, 0)):
+        """将字体加载并添加到全局字体管理器
+        弃用API
+        """
         if not pygame.freetype.get_init():
             raise Exception("请调用[GameFont.load()]方法,初始化字体类")
         if font_path is None:
             font_path = GameFont.__default_font_path[1]
 
-        # if type(font_color) == "str":
         font_color = GameFont.hex_color_to_rgb(font_color)
 
         font_surface = GameFont.__font_dict.get(f"{text}_{font_size}_{font_color}_{font_path}")
         if font_surface:
+            # 跳过重复添加的
             return
         font_surface = pygame.freetype.Font(font_path, font_size)
         font_surface.vertical = False
@@ -181,6 +190,64 @@ class GameFont:
             "font_path": font_path,
             "font_color": font_color
         }
+
+    # @staticmethod
+    # def add(text: str, font_size: int = 13, font_color: tuple | str = (255, 255, 255), font_path: str = None,
+    #         mask_color: tuple | str = (0, 0, 0)):
+    #     """将字体加载并添加到全局字体管理器 - 优化版：字符级烘焙"""
+    #     if not pygame.freetype.get_init():
+    #         raise Exception("请调用[GameFont.load()]方法,初始化字体类")
+    #     if font_path is None:
+    #         font_path = GameFont.__default_font_path[1]
+    #
+    #     font_color = GameFont.hex_color_to_rgb(font_color)
+    #     mask_color = GameFont.hex_color_to_rgb(mask_color)
+    #
+    #     # 检查是否已缓存整个文本
+    #     text_key = f"{text}_{font_size}_{font_color}_{font_path}"
+    #     if text_key in GameFont.__font_dict:
+    #         return
+    #
+    #     # 获取或创建字体对象
+    #     font_key = f"{font_path}_{font_size}"
+    #     if font_key not in GameFont.__font_dict:
+    #         font_surface = pygame.freetype.Font(font_path, font_size)
+    #         font_surface.vertical = False
+    #         GameFont.__font_dict[font_key] = font_surface
+    #     else:
+    #         font_surface = GameFont.__font_dict[font_key]
+    #
+    #     # 烘焙每个字符（避免重复烘焙）
+    #     for char in text:
+    #         char_key = f"{char}_{font_size}_{font_color}_{font_path}"
+    #         if char_key not in GameFont.__surface_list:
+    #             char_sur, char_rect = font_surface.render(char, font_color)
+    #             char_mask_sur, _ = font_surface.render(char, mask_color)
+    #
+    #             GameFont.__surface_list[char_key] = {
+    #                 "text": char,
+    #                 "surface": char_sur,
+    #                 "mask_surface": char_mask_sur,
+    #                 "mask_color": mask_color,
+    #                 "rect": char_rect,
+    #                 "font_path": font_path,
+    #                 "font_color": font_color
+    #             }
+    #
+    #     # 同时缓存整个文本（保持向后兼容）
+    #     text_sur, text_rect = font_surface.render(text, font_color)
+    #     text_mask_sur, _ = font_surface.render(text, mask_color)
+    #
+    #     GameFont.__font_dict[text_key] = font_surface
+    #     GameFont.__surface_list[f"{text}_{font_size}_{font_color}"] = {
+    #         "text": text,
+    #         "surface": text_sur,
+    #         "mask_surface": text_mask_sur,
+    #         "mask_color": mask_color,
+    #         "rect": text_rect,
+    #         "font_path": font_path,
+    #         "font_color": font_color
+    #     }
 
     @staticmethod
     def get_text_size(text: str):
@@ -380,7 +447,7 @@ class GameFont:
         current_line = ''
         current_color = font_color  # 默认颜色
 
-        render_text_list = []  # 每行的内容和颜色：[(line_text, color)]
+        render_text_list: list[Tuple[str, tuple]] = []  # 每行的内容和颜色：[(line_text, color)]
 
         for ta in text_arr:
             t_color = ta.get("color") or GameFont.hex_color_to_rgb(font_color)
@@ -414,6 +481,7 @@ class GameFont:
         text_surface = pygame.Surface((width, height), pygame.SRCALPHA)
         render_y = 0
 
+        ont_width = 0
         for line_text, line_color in render_text_list:
             line_surface = GameFont.get_text_surface_line(line_text,
                                                           baking=baking,
@@ -421,13 +489,17 @@ class GameFont:
                                                           font_color=line_color,
                                                           bolder=bolder,
                                                           mask_color=mask_color)
-
+            ont_width = line_surface.width # 获取最后一行数据的宽度
             # 垂直方向居中对齐（可选，当前为顶部对齐）
             if render_y + line_surface.get_height() > height:
                 break  # 超出高度，不再渲染
 
             text_surface.blit(line_surface, (0, render_y))
             render_y += line_surface.get_height()
+
+        # 如果只有一行. 那么宽度不一定是传入的宽度.  需要拿到上面保存的最新的宽度
+        if len(render_text_list) == 1:
+            width = ont_width
         # 转换为实际的大小
         mask_sur_full = pygame.Surface((width, render_y + 5), pygame.SRCALPHA)
         mask_sur_full.blit(text_surface, (0, 0))

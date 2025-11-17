@@ -139,11 +139,10 @@ class GameLogin(SpriteBase):
         加载UI 比如选区 和输入账号
         :return:
         """
-
         game_ui: "GameUI" = self.gm.get("游戏UI")
         _width = 200
         _height = 230
-        dialog_title = SourceManager.surface_cale(
+        dialog_title = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
             [_width, 32]).convert_alpha()
 
@@ -258,11 +257,12 @@ class GameLogin(SpriteBase):
         game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
         def __entrance_game(acc_name, data):
+            # 先把角色挂载上
+            self.gm.add("主角", Player(acc_name, data))
             GameMapManager.change_map(data.get("scene_id"))
             game_ui.remove_surface_ui("登录账号UI")
             self.gm.shop_system = ShopSystem(self.gm)
             self.gm.add("地图", RenderMap())
-            self.gm.add("主角", Player(acc_name, data))
 
         # 设置点击回调
         def on_button_click():
@@ -273,7 +273,8 @@ class GameLogin(SpriteBase):
             if len(self.user_name.text) == 0 or len(self.user_pwd.text) == 0:
                 GameDialogBoxManager.dialog("账号密码不能为空")
                 return
-            login = LoginServer()
+            login = LoginServer("http://169.254.249.130:8089/")
+            # login = LoginServer()
 
             def _on_login_success(data: dict):
                 nonlocal login
@@ -287,11 +288,11 @@ class GameLogin(SpriteBase):
 
                 # 实例化服务器连接
                 # w_server = GameWorldServer(self.gm.get("主角"),self.gm,"http://llzfs.online:8089/")
-                w_server = GameWorldServer(self.gm.get("主角"), self.gm)
+                w_server = GameWorldServer(self.gm.get("主角"), self.gm,"http://169.254.249.130:8089/")
                 ser_sta = w_server.connect_sync(GameMapManager.map_id)
                 if not ser_sta:
                     raise Exception("服务器连接失败")
-
+                # 追加事件
                 self.gm.add_manager("w_server", w_server)
                 self.cleanup(False)
                 time.sleep(1)
@@ -325,27 +326,14 @@ class GameLogin(SpriteBase):
                     "name": "Eval",
                     "scene_id": "1042",
                     "sx": 995,
-                    "sy": 240,
-                    "stand_texture": "NPC国子监祭酒",
-                    "move_texture": "NPC国子监祭酒_move",
-                    "stand_model": [8, 4],
-                    "move_model": [8, 4],
-                    "stand_direction": [1, 2, 3, 4],
-                    "move_direction": [1, 2, 3, 4],
-                    "max_healthy": 500,
+                    "sy": 1200,
+                    "healthy": 500,
                     "mana": 100,
                     "attack": 10,
                     "defense": 10,
                     "attack_speed": 5,
-                    "anim_name": "进阶夜罗刹",
-                    "npc_data": {
-                        "战斗_攻击2": "13",
-                        "战斗_击飞": "4",
-                        "战斗_施法": "16",
-                        "战斗_死亡": "12",
-                        "战斗_挨打": "1",
-                    },
-                    "items": ["1"],
+                    "anim_model": "3",
+                    "items": "1,0,0,1,1|1,0,3,2,3|1,1,3,3,3|1,2,3,4,3|1,3,3,2,3|1,3,3,3,3",
                 })
                 time.sleep(1)
                 self.cleanup()
@@ -361,6 +349,7 @@ class GameLogin(SpriteBase):
         self.music_slider.set_on_value_changed(on_music_volume_changed)
 
         def on_change_music(e):
+            GameMusicManager.bgm_enabled = e
             if e:
                 GameMusicManager.resume_bgm()
             else:

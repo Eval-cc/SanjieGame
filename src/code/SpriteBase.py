@@ -130,14 +130,14 @@ class SpriteBase:
 
         # 8方向映射（配置编号 → 角度）
         self.direction_map_8 = {
-            1: 90,  # 下 ↓
-            2: 180,  # 左 ←
-            3: 0,  # 右 →
-            4: 270,  # 上 ↑
-            5: 135,  # 左下 ↙
-            6: 45,  # 右下 ↘
-            7: 225,  # 左上 ↖
-            8: 315,  # 右上 ↗
+            1: 45,  # 右下 ↘
+            2: 135,  # 左下 ↙
+            3: 225,  # 左上 ↖
+            4: 315,  # 右上 ↗
+            5: 90,  # 下 ↓
+            6: 180,  # 左 ←
+            7: 270,  # 上 ↑
+            8: 0,  # 右 →
         }
 
         self.__register = []
@@ -195,7 +195,10 @@ class SpriteBase:
 
     def is_clicked(self, mouse_x: int, mouse_y: int):
         """精灵是否被点击, 不需要子类实现"""
+        from src.system.GameTipDialog import GameDialogBoxManager
         try:
+            if GameDialogBoxManager.has_dialog() and self.layer != SpriteLayer.UI_DIALOG:
+                return False
             if not self.active_click:
                 return False
 
@@ -368,6 +371,18 @@ class SpriteBase:
             return [self.position[0], self.position[1], 0, 0]
         return [self.position[0], self.position[1], self.rect.width, self.rect.height]
 
+
+    def get_pos(self):
+        """返回当前角色的屏幕坐标
+        rect(x,y,w,h)
+        """
+        return self.rect.topleft
+
+    def set_pos(self, x, y):
+        """设置精灵位置"""
+        self.position[0] = x
+        self.position[1] = y
+
     def is_dead(self):
         """ 是否死亡状态? """
         return self.sprite_state == SpriteState.DEAD
@@ -463,8 +478,27 @@ class SpriteBase:
             if diff < min_diff:
                 min_diff = diff
                 best_dir = dir_id
-
         self.direction = best_dir - 1
+        # if self.name == "Eval":
+        #     _aa = ""
+        #     match self.direction:
+        #         case 0:
+        #             _aa = "下"
+        #         case 1:
+        #             _aa = "左"
+        #         case 2:
+        #             _aa = "右"
+        #         case 3:
+        #             _aa = "上"
+        #         case 4:
+        #             _aa = "左下"
+        #         case 5:
+        #             _aa = "右下"
+        #         case 6:
+        #             _aa = "左上"
+        #         case 7:
+        #             _aa = "右上"
+        #     print(f"当前朝向:{self.direction}[{_aa}]")
 
     def stop_moving(self):
         """停止移动"""
@@ -472,6 +506,8 @@ class SpriteBase:
         self.current_path_index = 0
         self.animator.play(f"stand_{self.direction}")
         self.sprite_state = SpriteState.IDLE
+
+
 
     def load_battle_anim(self, target: str, ani_name: str, npc_data: dict):
         """加载精灵的战斗动画序列"""
@@ -573,4 +609,4 @@ class SpriteBase:
         pass
 
     def __str__(self):
-        return "[class SpriteBase]"
+        return f"[class SpriteBase] -> {self.name}"

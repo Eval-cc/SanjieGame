@@ -252,9 +252,6 @@ class GameCheckBox(SpriteBase, GameComponentBase):
         if self.need_redraw:
             self.render()
 
-    def destroy(self):
-        GameEvent.remove(f"切换事件_{self.UID}")
-
     def update_pos(self, x: int, y: int):
         """
         更新组件位置

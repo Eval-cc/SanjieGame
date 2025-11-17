@@ -16,6 +16,7 @@ from src.code.Item import Item
 from src.code.SpriteBase import SpriteBase
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
+from src.manager.GameWorldManager import GameWorldManager
 # from src.manager.GameLuaManager import GameLuaManager
 from src.manager.SourceManager import SourceManager
 from src.necessary.GameBattle import BattleManager
@@ -154,10 +155,10 @@ class GameBag:
                                                                      }, pos=[90, 360])
 
         # 道具锁定框
-        self.item_lock = SourceManager.surface_cale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
+        self.item_lock = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
                                                     [20, 20])
         # 道具描述UI的道具图片背景
-        self.icon_item_bg = SourceManager.surface_cale(
+        self.icon_item_bg = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/icon_skill_bg.png"), [60, 60])
 
         self.__GUI_rect_list = [
@@ -221,10 +222,18 @@ class GameBag:
             for cfg_i in range(len(t)):
                 self.__item_type[key][int(t_head[cfg_i])] = t[cfg_i]
 
-    def add_item(self, item_id: str, total: int = 0, merge: bool = True, target_page: int = -1, has_call: bool = False):
-        """向背包添加物品
-        @:param
-        target_page: 直接指定追加到的页数: 1, 2, 3, ...
+    def add_item(self, item_id: str, total: int = 0, merge: bool = True, target_page: int = -1,
+                 target_x: int = -1, target_y: int = -1, has_call: bool = False):
+        """
+        向背包添加物品
+        :param item_id:  道具ID
+        :param total: 道具数量
+        :param merge: 是否指定了允许强制合并道具数量. 可以忽视道具的不允许叠加 属性
+        :param target_page: 直接指定追加到的页数: 1, 2, 3, ...
+        :param target_x: 直接指定追加到的横坐标
+        :param target_y: 直接指定追加到的纵坐标
+        :param has_call: 是否是递归调用追加道具方法
+        :return:
         """
         call_total = 0
 
@@ -242,10 +251,16 @@ class GameBag:
         for index_k in self.items_index_dict:
             if target_page != -1:
                 page, x, y = index_k.split("#")
-                page = target_page
+                if target_x != -1:
+                    x = max(target_x,0)
+                if target_y != -1:
+                    y = max(target_y, 0)
+                page = max(target_page, 0)
                 curr_key = f"{page}#{x}#{y}"
-                if not self.items_index_dict[curr_key]:
+                if not self.items_index_dict.get(curr_key):
                     break
+                else:
+                    GameLogManager.log_service_error(f"无效背包位置:{curr_key}")
             else:
                 if not self.items_index_dict[index_k]:
                     page, x, y = index_k.split("#")
@@ -676,9 +691,9 @@ class GameBag:
                     else:
                         u_player: "SpriteBase" = self.gm.get("主角")
                         __world_pos = u_player.get_pos_world()
-                        # TODO: 后续添加联机功能之后, 需要通知服务器.在这个位置有一个被扔下的包裹
                         # 扔到地上
-                        PickableItem(self.__select_item.get("item"), __world_pos[0], __world_pos[1])
+                        GameWorldManager.add_pick_item(self.__select_item.get("item"), __world_pos[0], __world_pos[1],
+                                                       True)
                         # 从背包移除
                         self.remove_item(self.__select_item.get("uid"))
 

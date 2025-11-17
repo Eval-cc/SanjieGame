@@ -852,21 +852,23 @@ class BattleManager:
     """游戏管理对象"""
     _gm: "GameManager" = None
 
-    @staticmethod
-    def battle_start(gm: "GameManager", player: SpriteBase, enemy_list: list[SpriteBase]):
+    @classmethod
+    def Awake(cls, gm):
+        cls._gm = gm
+
+    @classmethod
+    def battle_start(cls,player: SpriteBase, enemy_list: list[SpriteBase]):
         """
         开始战斗, 初始化战斗场景
-        :param gm:
         :param player:
         :param enemy_list:
         :return:
         """
         BattleManager._start_battle = True
-        BattleManager._battle_scene = _Battle(gm)
+        BattleManager._battle_scene = _Battle(BattleManager._gm)
         BattleManager._battle_scene.player = player
         BattleManager._battle_scene.enemy_list = enemy_list
 
-        BattleManager._gm = gm
         BattleManager._gm.add("战斗场景", BattleManager._battle_scene)
         BattleManager._start_battle = True
 

@@ -267,7 +267,7 @@ class RenderMap(SpriteBase):
                     mask_top <= view_y + view_height and  # 遮罩下边界 >= 相机上边界
                     mask_bottom >= view_y):  # 遮罩上边界 <= 相机下边界
                 if mask.get("surface") is None and mask.get("path") is not None:
-                    mask["surface"] = SourceManager.surface_cale(SourceManager.load(mask.get("path")),
+                    mask["surface"] = SourceManager.ssurface_scale(SourceManager.load(mask.get("path")),
                                                                  [mask.get("width"), mask.get("height")])
                 if mask["surface"] is None:
                     continue

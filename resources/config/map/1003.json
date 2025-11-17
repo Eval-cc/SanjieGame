@@ -1,5 +1,32 @@
 {
-    "npc": [],
+    "npc": [
+        {
+            "id": 4,
+            "position": [
+                2202,
+                405
+            ],
+            "name": "神秘剑客"
+        },
+        {
+            "id": 2,
+            "position": [
+                3285,
+                1513
+            ],
+            "name": "奸商",
+            "task": ""
+        },
+        {
+            "id": 9,
+            "position": [
+                512,
+                536
+            ],
+            "name": "红脖子狗",
+            "task": ""
+        }
+    ],
     "pk": false,
     "scene_id": "1003",
     "scene_name": "世外桃源",

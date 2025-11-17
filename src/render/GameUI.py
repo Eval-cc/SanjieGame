@@ -21,6 +21,7 @@ from src.code.SpriteBase import SpriteBase
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
 from src.system.Animator import Animator
+from src.system.GameTipDialog import GameDialogBoxManager
 from src.system.GameToast import GameToastManager
 
 
@@ -93,7 +94,7 @@ class GameUI(SpriteBase):
 
         ui_surface = path
         if type(path) == str:
-            ui_surface = SourceManager.surface_cale(SourceManager.load(path), size) if size else SourceManager.load(
+            ui_surface = SourceManager.ssurface_scale(SourceManager.load(path), size) if size else SourceManager.load(
                 path)
 
         sur_rect = ui_surface.get_rect()
@@ -593,6 +594,16 @@ class GameUI(SpriteBase):
             # 新的宽度可拖拽区域也要根据新的宽度来更新
             # drag_pos[2] = sur["rect"].width - drag_pos[2]
             sur["drag_rect"] = [int(i) for i in drag_pos]
+
+
+    def remove_all_ui(self):
+        """
+        移除所有UI
+        :return:
+        """
+        self.rect_list.clear()
+        self.__sort_surface.clear()
+        self.__sort_layer_layer()  # 刷新一下ui
 
     def get_surface_sprite(self, name: str):
         return self.__sort_surface.get(name)

@@ -125,9 +125,9 @@ class Item(SpriteBase):
         for config_key, mapping in Item.FIELD_MAPPING.items():
             raw_value = item_data.get(config_key)  # 从配置中取值
             if config_key == "Icon":
-                self.avatar = SourceManager.surface_cale(
+                self.avatar = SourceManager.ssurface_scale(
                     SourceManager.load(fr"{SourceManager.ui_item_path}\help\{raw_value}.png"), [55, 55])
-                self.icon = SourceManager.surface_cale(
+                self.icon = SourceManager.ssurface_scale(
                     SourceManager.load(fr"{SourceManager.ui_item_path}\{raw_value}.png"), [40, 40])
                 self.rect = self.icon.get_rect()
                 continue

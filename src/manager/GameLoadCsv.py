@@ -15,8 +15,8 @@ class GameLoadCSV:
     def __init__(self):
         raise Exception("当前类是单例的工具类,请勿初始化")
 
-    @staticmethod
-    def load(file_path: str):
+    @classmethod
+    def load(cls, file_path: str):
         """交给游戏管理类调用,请勿在外部逻辑层调用"""
         with open(file_path, "r", encoding="gb2312") as f:
             csv_data = f.read()
@@ -30,7 +30,7 @@ class GameLoadCSV:
             data_list = []  # 解析总结果
             data_line_txt = ""  # 当前行文本
             for t in csv_data:
-                if t == "#" and column_index == 0:
+                if (t == "#") and column_index == 0:
                     has_pass = True
                 if t == "\"":
                     has_part = not has_part
@@ -41,7 +41,8 @@ class GameLoadCSV:
 
                 if t == "\n":
                     if not has_part and not has_pass:
-                        data_list.append([str(tx.replace("，", ",").replace("\"","")) for tx in data_line_txt.split(",")])
+                        data_list.append(
+                            [str(tx.replace("，", ",").replace("\"", "")) for tx in data_line_txt.split(",")])
                         column_index = 0  # 换行了
                         data_line_txt = ""
 
@@ -56,5 +57,5 @@ class GameLoadCSV:
                     continue
                 data_line_txt += t
             if len(data_line_txt) > 0:
-                data_list.append([str(tx.replace("，", ",").replace("\"","")) for tx in data_line_txt.split(",")])
+                data_list.append([str(tx.replace("，", ",").replace("\"", "")) for tx in data_line_txt.split(",")])
             return data_list

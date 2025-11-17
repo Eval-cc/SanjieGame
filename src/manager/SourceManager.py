@@ -174,7 +174,7 @@ class SourceManager:
         if SourceManager.__source_dict.get(file_path):
             # 是否指定了缩放
             if scale:
-                return SourceManager.surface_cale(SourceManager.__source_dict[file_path], scale)
+                return SourceManager.ssurface_scale(SourceManager.__source_dict[file_path], scale)
             return SourceManager.__source_dict[file_path]
         try:
             if file_name.lower().endswith(".png"):
@@ -187,7 +187,7 @@ class SourceManager:
                 raise Exception(f"暂不支持的文件类型,{file_name.split(".").pop()}")
             # 是否指定了缩放
             if scale:
-                return SourceManager.surface_cale(SourceManager.__source_dict[file_path], scale)
+                return SourceManager.ssurface_scale(SourceManager.__source_dict[file_path], scale)
             return SourceManager.__source_dict[file_path]
         except pygame.error as e:
             if str(e).find("Unsupported image format") >= 0:
@@ -252,7 +252,7 @@ class SourceManager:
 
 
     @staticmethod
-    def surface_cale(surface:pygame.Surface,size:list[float|int]):
+    def ssurface_scale(surface:pygame.Surface,size:list[float|int]):
         """平滑的将surface缩放到任意大小"""
         if surface is None:
             return surface

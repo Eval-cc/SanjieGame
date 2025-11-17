@@ -109,7 +109,7 @@ class GameMusicManager:
         cls._bgm_channel.pause()
 
     @classmethod
-    def resume_bgm(cls, fade_in: int = 500):
+    def resume_bgm(cls):
         """恢复背景音乐"""
         if cls._current_bgm is not None and cls.bgm_enabled:
             cls._bgm_channel.unpause()
@@ -118,7 +118,7 @@ class GameMusicManager:
     @classmethod
     def stop_bgm(cls, fade_out: int = 1000):
         """停止背景音乐"""
-        cls._bgm_channel.fadeout(fade_out)
+        cls._bgm_channel.fadeout(fade_out) # 暂停, 并淡出
         cls._current_bgm = None
         cls._current_bgm_name = None
 

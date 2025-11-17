@@ -18,9 +18,11 @@ import struct
 from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
 
 from src.code.Enums import SpriteState
+from src.code.Item import Item
 from src.code.SpriteBase import SpriteBase
 from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
+from src.manager.GameWorldManager import GameWorldManager
 
 from src.manager.SourceManager import SourceManager
 from src.network.LoginServer import LoginServer
@@ -83,8 +85,6 @@ class GameWorldServer(SpriteBase):
 
         # 设置事件处理器
         self._setup_event_handlers()
-
-        self.gm.add("network_client", self)
 
     def _setup_event_handlers(self):
         """设置同步事件处理器"""
@@ -171,11 +171,32 @@ class GameWorldServer(SpriteBase):
             :param data:
             :return:
             """
-            # GameLogManager.log_service_error("被人挤下线了")
-            reason = data.get('reason')
-            # GameToastManager.add_message(reason)
-            GameDialogBoxManager.dialog(reason)
             self.disconnect()
+            reason = data.get('reason')
+            GameDialogBoxManager.dialog(reason)
+
+        @self.sio.event
+        def player_action(data):
+            """
+            收到玩家动作
+            :param data:
+            :return:
+            """
+            # 1 是扔道具
+            if data.get('type') == "1":
+                # 先判断这个丢弃的道具是否已经追加过了
+                puid = data.get('itemData').get("puid")
+                if not GameWorldManager.has_pick_item(puid):
+                    world_x = data.get('itemData').get("world_x")
+                    world_y = data.get('itemData').get("world_y")
+                    item_data: dict[str, str] = SourceManager.get_csv("items", data.get('itemData').get("id"))
+                    item_data["__pos"] = [0, 0, 0]
+                    item = Item(item_data)
+                    item.count = data.get('itemData').get("count")
+                    GameWorldManager.add_pick_item(item, world_x, world_y, False, puid)
+            # 2 是被人捡起来了. 或者过期了?
+            elif data.get('type') == "2":
+                GameWorldManager.remove_pick_item(data.get('itemData').get("puid"))
 
         # @self.sio.event
         # def player_moved(data):
@@ -238,20 +259,23 @@ class GameWorldServer(SpriteBase):
                     return
                 self.players[player_id]['position'] = [x, y]
 
-        @self.sio.event
-        def player_updated(data):
-            """玩家属性更新"""
-            player_id = data.get('playerId')
-            if player_id in self.players:
-                self.players[player_id].update(data.get('attributes', {}))
-                self._update_remote_player_attributes(player_id, data.get('attributes', {}))
-                # GameLogManager.log_service_debug(f"玩家 {player_id} 属性已更新")
+        # @self.sio.event
+        # def player_updated(data):
+        #     """玩家属性更新"""
+        #     player_id = data.get('playerId')
+        #     if player_id in self.players:
+        #         self.players[player_id].update(data.get('attributes', {}))
+        #         self._update_remote_player_attributes(player_id, data.get('attributes', {}))
+        #         # GameLogManager.log_service_debug(f"玩家 {player_id} 属性已更新")
 
         @self.sio.event
         def chat_message(data):
             """聊天消息"""
-            message = data.get('message', '')
-            player_id = data.get('playerId', '未知')
+            message = data.get('message')
+            player_id = data.get('playerId')
+            if message is None or player_id is None:
+                GameToastManager.add_message("异常.无法接收服务器消息")
+                return
             player_name = self.players.get(player_id, {}).get('name', '未知玩家')
             chat_text = f"{player_name}: {message}"
 
@@ -362,10 +386,38 @@ class GameWorldServer(SpriteBase):
             self.sio.disconnect()
         if change_scene:
             return
-        self.gm.logout()
+        # 清空在线玩家列表
+        for p_k in self.remote_player.keys():
+            self.remote_player[p_k].destroy()
+        self.remote_player.clear()
+
+        # 重置一些数据
+        self.room_id = None
+        self.sprite = None
+        self.player_sprite = None
+
+        # 连接状态
         self.connected = False
+        self.player_id = None
+        # 玩家数据
+        self.players: Dict[str, Dict[str, Any]] = {}
+        self.chat_messages: List[str] = []
+        # 性能优化
+        self._last_sent_pos = None
+        self._last_send_time = 0
+        self.send_interval = 0.1  # 100ms 发送间隔
+        self.send_count = 0
+        # 回调函数
+        self.on_player_joined: Optional[Callable] = None
+        self.on_player_left: Optional[Callable] = None
+        self.on_player_moved: Optional[Callable] = None
+        self.on_chat_message: Optional[Callable] = None
+        self.on_connected: Optional[Callable] = None
+        self.on_disconnected: Optional[Callable] = None
         if self.on_disconnected:
             self.on_disconnected()
+        self.gm.remove(self)
+        self.gm.logout()
 
     def send_msg(self, channel: str, data: dict):
         """
@@ -377,12 +429,13 @@ class GameWorldServer(SpriteBase):
         if not self.connected:
             GameToastManager.add_message("已断开连接")
             return
-
+        if data.get("roomId") is None:
+            data["roomId"] = self.room_id
         self.sio.emit(channel, data)
 
-    def send_move(self, x: float, y: float):
+    def send_move(self):
         """
-        同步发送移动消息（带频率限制）
+        给服务器发送移动消息
         """
         current_time = time.time()
 
@@ -395,11 +448,11 @@ class GameWorldServer(SpriteBase):
                 start_time = time.time()
                 self.send_msg('player_move', {
                     'roomId': self.room_id,
-                    'x': int(x),
-                    'y': int(y),
+                    'x': self.sprite.position[0], # 当前位置
+                    'y': self.sprite.position[1],
                     "direction": self.sprite.direction,
                     "sta": self.sprite.sprite_state.value,
-                    "current_path": self.sprite.current_path
+                    "current_path": self.sprite.current_path # 寻路的路径
                 })
                 send_time = (time.time() - start_time) * 1000
 
@@ -408,10 +461,7 @@ class GameWorldServer(SpriteBase):
 
                 # 每100次打印一次性能统计
                 if self.send_count % 100 == 0:
-                    GameLogManager.log_service_debug(f"网络性能: {send_time:.2f}ms")
                     GameToastManager.add_message(f"网络性能: {send_time:.2f}ms")
-
-                # GameLogManager.log_service_debug(f"发送移动消息: ({x}, {y})")
 
             except Exception as e:
                 GameLogManager.log_service_error(f"发送移动消息失败: {e}")
@@ -471,13 +521,12 @@ class GameWorldServer(SpriteBase):
         只在位置变化时发送移动消息
         """
         if self.connected and self.sprite:
-            # current_pos = self.player_sprite.get("position")
-            current_pos = self.sprite.position
+            # current_pos = self.sprite.position
 
             # 检查位置是否变化，避免频繁发送
-            if self._last_sent_pos != current_pos:
-                self.send_move(current_pos[0], current_pos[1])
-                self._last_sent_pos = current_pos.copy()
+            # if self._last_sent_pos != current_pos:
+            #     self.send_move(current_pos[0], current_pos[1])
+            #     self._last_sent_pos = current_pos.copy()
             try:
                 for re_user in self.remote_player.keys():
                     self.remote_player[re_user].render()
@@ -488,21 +537,33 @@ class GameWorldServer(SpriteBase):
                 pass
 
     def send_stop(self):
+        """
+        发送停止移动的指令到服务器
+        如果连接断开会尝试重连，并在重连后返回
+        如果发送过程中出现异常，会捕获并处理特定的异常情况
+        """
         if not self.sio.connected:
             self.reconnect()  # 实现重连逻辑
             return
 
         try:
+            # 构造并发送移动消息，使用特殊坐标(-99, -99)表示停止
             self.send_msg('player_move', {
-                'roomId': self.room_id,
-                'x': -99,
-                'y': -99,
-                "direction": self.sprite.direction,
-                "sta": SpriteState.IDLE.value
+                'roomId': self.room_id,  # 房间ID
+                'x': -99,  # X坐标，使用-99表示停止
+                'y': -99,  # Y坐标，使用-99表示停止
+                "direction": self.sprite.direction,  # 角色朝向
+                "sta": SpriteState.IDLE.value  # 角色状态，设置为空闲状态
             })
         except socketio.exceptions.BadNamespaceError:
-            print("网络连接异常，正在重连...")
+            # 处理命名空间错误，通常是网络连接问题
+            GameToastManager.add_message("网络连接异常，正在重连...")
             self.reconnect()
+        except AttributeError as ae:
+            # 处理属性错误，特别是当sprite对象不存在时
+            if self.sprite is None:
+                self.sprite = self.gm.get("主角")  # 尝试重新获取主角对象
+            GameLogManager.log_service_error(ae)  # 记录错误信息
 
     def reconnect(self, max_retries=3):
         for _ in range(max_retries):
@@ -511,14 +572,13 @@ class GameWorldServer(SpriteBase):
                 self.connect_sync(self.room_id)
                 return True
             except Exception as e:
-                print(f"重连失败: {e}")
+                GameLogManager.log_service_error(f"重连失败: {e}")
                 time.sleep(1)
         return False
 
 
 class RemotePlayerSprite(SpriteBase):
     """远程玩家精灵类（使用世界坐标）"""
-
     def __init__(self, player_data: Dict[str, Any], gm: any):
         super().__init__()
         self.player_data = player_data
@@ -535,7 +595,7 @@ class RemotePlayerSprite(SpriteBase):
     def _init_from_network_data(self, sprite_data: Dict[str, Any]):
         """从网络数据初始化"""
         self.UID = sprite_data.get('UID')
-        self.name = "网友:" + sprite_data.get('name')
+        self.name = sprite_data.get('name')
         # self.eff_animator_stick = Animator(GameManager)
 
         self.direction = sprite_data.get('direction')  # 朝向的初始值，默认为右下方向
@@ -558,11 +618,8 @@ class RemotePlayerSprite(SpriteBase):
         self.height = sprite_data.get('height')
         self.current_path = sprite_data.get('current_path')
         self.current_path_index = 0  # 当前路径索引
-
-        camera_pos = self.gm.game_camera.get_position()
-        render_x = self.position[0] - camera_pos[0] - self.width / 2  # - (self.rect.width / 2)
-        render_y = self.position[1] - camera_pos[1] - self.height  # - (self.rect.height / 2)
-        self.__pos = [render_x, render_y]
+        # 服务器传递的位置就是世界坐标. 这里不需要在进行转换. 直接用就行.  后续的移动传递的是寻路的路径. 就需要在当前客户端进行转换了
+        self.__pos = self.position
 
     def update_from_network(self, sprite_data: Dict[str, Any]):
         """从网络数据更新"""
@@ -622,8 +679,8 @@ class RemotePlayerSprite(SpriteBase):
     def render(self):
         self.move()
         camera_pos = self.gm.game_camera.get_position()
-        render_x = self.__pos[0] - camera_pos[0] - self.width / 2  # - (self.rect.width / 2)
-        render_y = self.__pos[1] - camera_pos[1] - self.height  # - (self.rect.height / 2)
+        render_x = self.__pos[0] - camera_pos[0] - self.width / 2
+        render_y = self.__pos[1] - camera_pos[1] - self.height
 
         # 更新动画
         self.animator.update(0.5)  # 以 60fps 作为基准
@@ -635,8 +692,8 @@ class RemotePlayerSprite(SpriteBase):
 
     def render_mask(self):
         camera_pos = self.gm.game_camera.get_position()
-        render_x = self.__pos[0] - camera_pos[0] - self.width / 2  # - (self.rect.width / 2)
-        render_y = self.__pos[1] - camera_pos[1] - self.height  # - (self.rect.height / 2)
+        render_x = self.__pos[0] - camera_pos[0] - self.width / 2
+        render_y = self.__pos[1] - camera_pos[1] - self.height
 
         # 渲染人物名字
         GameFont.render_line_text(self.name,
@@ -644,12 +701,12 @@ class RemotePlayerSprite(SpriteBase):
                                       GameFont.get_text_size(f"{self.name}")[0] / 2),
                                   render_y - 10, True, font_color="#00CD00")
 
-    def destroy(self):
-        pass
-        # self.gm.remove(f"remote_player_{self.client_id}")
+    # def destroy(self):
+    #     pass
+    #     # self.gm.remove(f"remote_player_{self.client_id}")
 
     def move(self):
-        """根据路径数组移动角色（修复坐标体系 + 播放动画）"""
+        """根据路径数组移动角色"""
         # 检查是否有有效路径
         if not self.current_path or self.current_path_index >= len(self.current_path):
             self.current_path = None  # 清除已完成路径
