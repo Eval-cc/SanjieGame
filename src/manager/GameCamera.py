@@ -22,9 +22,9 @@ from src.manager.GameMapManager import GameMapManager
 class GameCamera(SpriteBase):
     def __init__(self):
         super().__init__([["地图移动事件"], [4]])
-        self.position = [0, 0]
+        # self.position = [0, 0]
         """相机坐标"""
-        self.__mounted = None
+        self.__mounted:SpriteBase = None
         """相机挂载对象"""
         self.__move_speed = 50
         """相机移动速度"""
@@ -43,11 +43,11 @@ class GameCamera(SpriteBase):
         if len(GameManager.game_map_size) == 0:
             return
 
-        x, y = self.__mounted.position
+        x, y = self.__mounted.transform.get_pos_list()
         cam_w, cam_h = GameManager.game_win_rect.width, GameManager.game_win_rect.height
 
         # 当前相机位置
-        cam_x, cam_y = self.position
+        cam_x, cam_y = self.transform.get_pos_list()
 
         # 定义安全区边距（你可以调整这个值）
         margin = 300
@@ -76,9 +76,7 @@ class GameCamera(SpriteBase):
             moved = True
 
         # 更新相机位置
-        self.position[0] = cam_x
-        self.position[1] = cam_y
-
+        self.transform.set_pos(cam_x,cam_y)
         # 如果位置发生变化才触发移动事件
         if moved:
             self.__mounted_last_pos = (x, y)
@@ -86,25 +84,23 @@ class GameCamera(SpriteBase):
                 evn()
 
         # 根据地图的配置尺寸,限制镜头的移动范围
-        if self.position[0] + GameManager.game_win_rect.width >= GameManager.game_map_size[0]:
+        if self.transform.x + GameManager.game_win_rect.width >= GameManager.game_map_size[0]:
             self.set_position(x=GameManager.game_map_size[0] - GameManager.game_win_rect.width)
 
-        # if self.position[1] + GameManager.game_win_rect.height >= GameManager.game_map_size[1]:
-        #     self.set_position(y=GameManager.game_map_size[1] - GameManager.game_win_rect.height)
         # 改成计算地图的实际高度.  因为部分地图的总高度可能少了一点
         real_height = GameMapManager.game_map_tile_size()[1] * GameMapManager.game_map_column_row_size()[1]
-        if self.position[1] + GameManager.game_win_rect.height > real_height:
-            self.position[1] = real_height - GameManager.game_win_rect.height
+        if self.transform.y + GameManager.game_win_rect.height > real_height:
+            self.transform.y = real_height - GameManager.game_win_rect.height
 
     def get_position(self):
-        return self.position
+        return self.transform.get_pos()
 
     def set_position(self, x: int = None, y: int = None):
         """直接指定相机的位置"""
         if x is not None:
-            self.position[0] = x
+            self.transform.x = x
         if y is not None:
-            self.position[1] = y
+            self.transform.y = y
 
     def __set__(self, instance, value):
         GameLogManager.log_service_debug("无法直接设置相机对象")
@@ -128,11 +124,11 @@ class GameCamera(SpriteBase):
 
     def mounted(self, target: object):
         """将相机挂载到目标对象上"""
-        if not hasattr(target, "position"):
-            raise f"对象:{target.__class__.__name__} 没有[position]属性,无法挂载"
+        if not hasattr(target, "transform"):
+            raise f"对象:{target.__class__.__name__} 没有[transform]属性,无法挂载"
         self.__mounted = target
 
     def unmounted(self):
         """卸载相机跟随"""
         self.__mounted = None
-        self.position = [0, 0]
+        self.transform.set_pos(0,0)

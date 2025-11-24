@@ -272,7 +272,7 @@ class _Battle(SpriteBase):
         执行战斗准备
         """
         player.stop_moving()
-        self.play_old_pos = player.position
+        self.play_old_pos = player.transform.get_pos_list()
         # self.__load_ui()
         self.gm.game_camera.unmounted()
         player.direction = player.animator.get_dir("左上")
@@ -290,12 +290,13 @@ class _Battle(SpriteBase):
 
         # 设置战斗位置
         # 玩家固定在右下角
-        self.player.position = self.gm.scene_to_global_pos(
+        _g_pos = self.gm.scene_to_global_pos(
             self.gm.game_win_rect.width - 200,
             self.gm.game_win_rect.height - 80
         )
-        self.player.rect.x = self.player.position[0]
-        self.player.rect.y = self.player.position[1]
+        self.player.transform.set_pos(_g_pos[0], _g_pos[1])
+        self.player.rect.x = self.player.transform.x
+        self.player.rect.y = self.player.transform.y
 
         # 敌人排列在左上角
         enemy_start_x = 100  # 左上角起点 X
@@ -325,9 +326,10 @@ class _Battle(SpriteBase):
                 x = row_start_x + col * enemy_spacing_x + current_index * 15
                 y = row_y - col * 10
 
-                enemy.position = self.gm.scene_to_global_pos(x, y)
-                enemy.rect.x = enemy.position[0]
-                enemy.rect.y = enemy.position[1]
+                _g_pos = self.gm.scene_to_global_pos(x, y)
+                enemy.transform.set_pos(_g_pos[0], _g_pos[1])
+                enemy.rect.x = enemy.transform.x
+                enemy.rect.y = enemy.transform.y
                 current_index += 1
 
             row += 1
@@ -492,8 +494,8 @@ class _Battle(SpriteBase):
                         action_queue.append(
                             Action(self.player, "hurt", targets=[en], animation_parallel=True, timer=15))
 
-                        tar_pos = self.player.position
-                        action_queue.append(Action(self.player, "back", back=tar_pos))
+                        tar_pos = self.player.transform.get_pos()
+                        action_queue.append(Action(self.player, "back", back=[tar_pos.x, tar_pos.y]))
 
 
                     elif self.battle_sta == BattleState.CMD_MAGIC:
@@ -502,14 +504,14 @@ class _Battle(SpriteBase):
                         action_queue.append(Action(self.player, "attack_animation", __en_list,
                                                    # action_event={5: Action(target, "hurt_animation", actor, {})},
                                                    animation_name="战斗_施法",
-                                                   animation_pos=self.player.position,
+                                                   animation_pos=self.player.transform.get_pos_list(),
                                                    # animation_parallel=True,
                                                    # animation_loop=False
                                                    ))
                         action_queue.append(
                             Action(self.player, "magic_mult", targets=__en_list,
                                    animation_name=self.skill_data_queue.get("player"),
-                                   animation_pos=[self.gm.global_to_scene_pos(en.position[0], en.position[1])],
+                                   animation_pos=[self.gm.global_to_scene_pos(en.transform.x, en.transform.y)],
                                    hit_animation_name="战斗_挨打" if random.random() < 0.5 else "战斗_击飞",
                                    animation_parallel=True))
                         action_queue.append(
@@ -533,22 +535,22 @@ class _Battle(SpriteBase):
             actions.append(Action(en, "attack_animation",
                                   animation_name="战斗_施法",
                                   animation_pos=[
-                                      self.gm.global_to_scene_pos(self.player.position[0],
-                                                                  self.player.position[1])],
+                                      self.gm.global_to_scene_pos(self.player.transform.x,
+                                                                  self.player.transform.y)],
                                   # animation_parallel=True,
                                   # animation_loop=False
                                   ))
             actions.append(Action(en, "magic", targets=[self.player],
                                   animation_name="魔浪滔天",
                                   animation_pos=[
-                                      self.gm.global_to_scene_pos(self.player.position[0],
-                                                                  self.player.position[1])],
+                                      self.gm.global_to_scene_pos(self.player.transform.x,
+                                                                  self.player.transform.y)],
                                   hit_animation_name="战斗_挨打" if random.random() < 0.5 else "战斗_击飞",
                                   animation_parallel=True
                                   ))
 
             actions.append(Action(en, "hurt", targets=[self.player], timer=15))
-            actions.append(Action(en, "back", back=en.position))
+            actions.append(Action(en, "back", back=en.transform.get_pos_list()))
             #
             direction = en.animator.get_dir("右下")
             actions.append(
@@ -605,10 +607,10 @@ class _Battle(SpriteBase):
 
     def _process_move_action(self, action: Action):
         """处理移动动作（支持在目标点附近停止，避免完全贴脸）"""
-        target = action.back if action.type == "back" else action.targets[0].position
+        target = action.back if action.type == "back" else action.targets[0].transform.get_pos_list()
         actor = action.actor
         dest_x, dest_y = target
-        cur_x, cur_y = actor.position
+        cur_x, cur_y = actor.transform.get_pos_list()
         step = max(action.move_speed, 5)  # 每帧移动距离
 
         # 根据动作类型设置停止距离：
@@ -633,7 +635,7 @@ class _Battle(SpriteBase):
             # 按步长移动
             new_x = cur_x + dir_x * step
             new_y = cur_y + dir_y * step
-            actor.position = (new_x, new_y)
+            actor.transform.set_pos(new_x, new_y)
 
             # 更新方向动画
             dir_name = "右下" if dx > 0 else "左上"
@@ -645,12 +647,12 @@ class _Battle(SpriteBase):
             # 到达停止范围
             if distance > stop_distance:
                 # 精确停在 stop_distance 距离处
-                actor.position = (
+                actor.transform.set_pos(
                     dest_x - dir_x * stop_distance,
                     dest_y - dir_y * stop_distance
                 )
             else:
-                actor.position = (dest_x, dest_y)
+                actor.transform.set_pos(dest_x, dest_y)
             return True
 
     def _process_hurt_action(self, action: Action):
@@ -753,7 +755,7 @@ class _Battle(SpriteBase):
                 target.eff_animator_stick.play(
                     action.animation_name,
                     loop=action.animation_loop,
-                    render_pos=[self.gm.global_to_scene_pos(target.position[0], target.position[1])],  # 使用目标自身的位置
+                    render_pos=[self.gm.global_to_scene_pos(target.transform.x, target.transform.y)],  # 使用目标自身的位置
                     speed=0.5
                 )
             return False
@@ -830,7 +832,7 @@ class _Battle(SpriteBase):
         GameEvent.remove(f"战斗场景点击事件_{self.UID}")
         self.gm.game_camera.mounted(self.player)  # 需要重新挂载相机
         # self.gm.remove(self)
-        self.player.position = self.play_old_pos
+        self.player.transform.set_pos(self.play_old_pos[0], self.play_old_pos[1])
         self.player.end_battle()
         # 这里仅销毁生成的敌人副本, 主体仅在战斗胜利之后才执行销毁
         for enemy in self.enemy_list:
@@ -857,7 +859,7 @@ class BattleManager:
         cls._gm = gm
 
     @classmethod
-    def battle_start(cls,player: SpriteBase, enemy_list: list[SpriteBase]):
+    def battle_start(cls, player: SpriteBase, enemy_list: list[SpriteBase]):
         """
         开始战斗, 初始化战斗场景
         :param player:
@@ -883,7 +885,6 @@ class BattleManager:
         BattleManager._battle_scene.destroy()
         BattleManager._battle_scene = None
         BattleManager._gm.remove("战斗场景")
-        BattleManager._gm = None
         BattleManager._start_battle = False
 
     @staticmethod

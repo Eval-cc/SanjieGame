@@ -214,22 +214,14 @@ class Player(SpriteBase):
 
             x, y = GameManager.scene_to_global_pos_box(self.__g_pos[0], self.__g_pos[1])
             # self.rect.x, self.rect.y = x, y
-            self.position = [x * GameManager.game_box_size, y * GameManager.game_box_size]  # 实际的像素坐标，乘以32格子大小
+            self.transform.set_pos(x * GameManager.game_box_size, y * GameManager.game_box_size)
             self.scene_pos = [x, y]
             self.has_behind = False
             self.sprite_state = SpriteState.IDLE
 
+            # 加载模型
             user_actor_data = SourceManager.get_csv("user_actor", data.get("anim_model"))
-
-            self.stand_model = [int(i) for i in user_actor_data.get("站立轴").split(",")]
-            self.move_model = [int(i) for i in user_actor_data.get("移动轴").split(",")]
-            self.stand_direction = [int(i) for i in user_actor_data.get("站立方向").split(",")]
-            self.move_direction = [int(i) for i in user_actor_data.get("移动方向").split(",")]
-
-            # 赋值给实例变量
-            self.stand_texture = user_actor_data.get("站立模型")
-            self.move_texture = user_actor_data.get("移动模型")
-            self.scale_texture = float(user_actor_data.get("缩放"))
+            super().loading_model(user_actor_data)
 
             # 设置方向表，用于后续方向匹配（合并站立/移动方向，以保证完整性）
             self.supported_directions = sorted(set(self.stand_direction + self.move_direction))
@@ -244,6 +236,10 @@ class Player(SpriteBase):
             }
             anim_name = user_actor_data.get("战斗模型")
             self.load_battle_anim(target, anim_name, __npc_data)
+
+            # 名称的宽度
+            self.name_width = GameFont.get_text_size(f"{self.name}")[0]
+
         except AttributeError as ae:
             GameDialogBoxManager.dialog(f"初始化失败 {ae}")
             # GameLogManager.log_service_error(f"玩家初始化失败: {ae}")
@@ -266,9 +262,10 @@ class Player(SpriteBase):
         for b_idx, btn in enumerate(self.btn_s):
             # 加载精灵表
             try:
-                sprite_sheet = SourceManager.load(fr"Graphics\System\UI_JX\系统框架UI\{btn['source']}.png")
-            except:
-                GameLogManager.log_service_error(f"无法加载ui: {btn['source']}")
+                sprite_sheet = SourceManager.load(
+                    fr"{SourceManager.ui_system_path}\UI_JX\系统框架UI\{btn['source']}.png")
+            except Exception as e:
+                GameLogManager.log_service_error(f"无法加载ui: {btn['source']} {e}")
                 continue
 
             # 获取帧坐标数据
@@ -314,34 +311,48 @@ class Player(SpriteBase):
                 if not texture:
                     return frames_by_dir
                 image = SourceManager.load(f"{SourceManager.ui_npc_path}/{texture}.png").convert_alpha()
+                cols, rows = model
+                fw, fh = image.get_width() // cols, image.get_height() // rows
                 # 模型是否有缩放
                 if self.scale_texture != 1:
                     image = SourceManager.ssurface_scale(image, [image.get_width() * self.scale_texture,
                                                                  image.get_height() * self.scale_texture])
-                cols, rows = model
-                fw, fh = image.get_width() // cols, image.get_height() // rows
+                    fw *= self.scale_texture
+                    fh *= self.scale_texture
 
+                first_frame = image.subsurface((0, 0, fw, fh))
+                self.rect = first_frame.get_bounding_rect()
                 # 遍历每个方向
                 for _dir_idx, dir_val in enumerate(directions):
                     d_idx = dir_val - 1
                     if d_idx >= rows:
                         continue
                     # 自动忽略透明像素
-                    first_frame = image.subsurface((0, _dir_idx * fh, fw, fh))
-                    self.rect = first_frame.get_bounding_rect()
-                    base_offset_x = self.rect.x
-                    base_offset_y = self.rect.y
-
-                    # 遍历每一列
+                    # first_frame = image.subsurface((0, _dir_idx * fh, fw, fh))
+                    # # 遍历每一列
                     frames_by_dir[d_idx] = [
                         image.subsurface((
-                            col * fw + base_offset_x,  # 使用基准偏移量
-                            d_idx * fh + base_offset_y,  # 使用基准偏移量
-                            self.rect.width,  # 使用bounding rect的宽度
-                            self.rect.height  # 使用bounding rect的高度
+                            col * fw,  # 使用基准偏移量
+                            d_idx * fh,  # 使用基准偏移量
+                            fw,  # 使用bounding rect的宽度
+                            fh  # 使用bounding rect的高度
                         ))
                         for col in range(cols)
                     ]
+                    # self.rect = first_frame.get_bounding_rect()
+                    # base_offset_x = self.rect.x
+                    # base_offset_y = self.rect.y
+                    #
+                    # # 遍历每一列
+                    # frames_by_dir[d_idx] = [
+                    #     image.subsurface((
+                    #         col * fw + base_offset_x,  # 使用基准偏移量
+                    #         d_idx * fh + base_offset_y,  # 使用基准偏移量
+                    #         self.rect.width,  # 使用bounding rect的宽度
+                    #         self.rect.height  # 使用bounding rect的高度
+                    #     ))
+                    #     for col in range(cols)
+                    # ]
                 return frames_by_dir
 
             # 一次性加载两种动画
@@ -409,8 +420,9 @@ class Player(SpriteBase):
     def render(self):
         self.move()
         camera_pos = GameManager.game_camera.get_position()
-        render_x = self.position[0] - camera_pos[0] - self.rect.width / 2  # - (self.rect.width / 2)
-        render_y = self.position[1] - camera_pos[1] - self.rect.height  # - (self.rect.height / 2)
+
+        render_x = self.transform.x - camera_pos.x - self.rect.width / 2  # - (self.rect.width / 2)
+        render_y = self.transform.y - camera_pos.y - self.rect.height  # - (self.rect.height / 2)
         self.rect.x = render_x
         self.rect.y = render_y
 
@@ -423,7 +435,7 @@ class Player(SpriteBase):
         current_frame = self.animator.get_frame()
         if current_frame:
             # 使用统一的偏移量进行渲染
-            GameManager.game_win.blit(current_frame, (render_x, render_y))
+            GameManager.game_win.blit(current_frame, (render_x + self.stand_offset[0], render_y + self.stand_offset[1]))
 
         if GameManager.has_debug_render:
             pygame.draw.rect(GameManager.game_win, (220, 220, 220), (
@@ -433,13 +445,13 @@ class Player(SpriteBase):
 
     def render_mask(self):
         camera_pos = GameManager.game_camera.get_position()
-        render_x = self.position[0] - camera_pos[0] - (self.width / 2)
-        render_y = self.position[1] - camera_pos[1] - (self.height / 2)
+        render_x = self.transform.x - camera_pos.x - (self.width / 2)
+        render_y = self.transform.y - camera_pos.y - (self.height / 2)
         # 渲染人物名字
         GameFont.render_line_text(self.name,
-                                  int(self.rect.x + self.rect.width / 2 -
-                                      GameFont.get_text_size(f"{self.name}")[0] / 2),
-                                  self.rect.y - 10, True)
+                                  int(self.rect.x + self.stand_offset[0] + self.rect.width / 2 -
+                                      self.name_width / 2),
+                                  self.rect.y - 10 + self.stand_offset[1], True)
 
         if self.eff_animator_stick:
             self.eff_animator_stick.update(0.3, True)
@@ -493,16 +505,16 @@ class Player(SpriteBase):
 
         # 当前目标点（世界像素坐标）
         target_x, target_y = self.current_path[self.current_path_index]
-        dx = target_x - self.position[0]
-        dy = target_y - self.position[1]
+        dx = target_x - self.transform.x
+        dy = target_y - self.transform.y
         distance = (dx ** 2 + dy ** 2) ** 0.5
 
         if distance <= self.move_speed:
             # 到达目标
-            self.position[0], self.position[1] = target_x, target_y
+            self.transform.set_pos(target_x, target_y)
             self.scene_pos = [
-                int(self.position[0] // GameManager.game_box_size),
-                int(self.position[1] // GameManager.game_box_size)
+                int(self.transform.x // GameManager.game_box_size),
+                int(self.transform.y // GameManager.game_box_size)
             ]
             self.current_path_index += 1
 
@@ -510,8 +522,8 @@ class Player(SpriteBase):
                 self.stop_moving()
             else:
                 next_target = self.current_path[self.current_path_index]
-                self.update_direction(next_target[0] - self.position[0],
-                                      next_target[1] - self.position[1])
+                self.update_direction(next_target[0] - self.transform.x,
+                                      next_target[1] - self.transform.y)
 
                 self.update_blit_map = True  # 更新小地图
             return
@@ -519,12 +531,12 @@ class Player(SpriteBase):
         # 按速度移动
         move_x = (dx / distance) * self.move_speed
         move_y = (dy / distance) * self.move_speed
-        self.position[0] += move_x
-        self.position[1] += move_y
+        self.transform.x += move_x
+        self.transform.y += move_y
         # 更新全局格子坐标
         self.scene_pos = [
-            int(self.position[0] // GameManager.game_box_size),
-            int(self.position[1] // GameManager.game_box_size)
+            int(self.transform.x // GameManager.game_box_size),
+            int(self.transform.y // GameManager.game_box_size)
         ]
         # 通知服务器. 我移动了
         w_server: "GameWorldServer" = GameManager.get_manager("w_server")
@@ -536,8 +548,8 @@ class Player(SpriteBase):
         self.sprite_state = SpriteState.IDLE
         # 更新全局格子坐标
         self.scene_pos = [
-            int(self.position[0] // GameManager.game_box_size),
-            int(self.position[1] // GameManager.game_box_size)
+            int(self.transform.x // GameManager.game_box_size),
+            int(self.transform.y // GameManager.game_box_size)
         ]
         # 通知服务器. 我停止了
         w_server: "GameWorldServer" = GameManager.get_manager("w_server")
@@ -561,8 +573,8 @@ class Player(SpriteBase):
 
         # 立即更新方向（指向第一个目标点）
         if self.current_path:
-            dx = self.current_path[0][0] - self.position[0]
-            dy = self.current_path[0][1] - self.position[1]
+            dx = self.current_path[0][0] - self.transform.x
+            dy = self.current_path[0][1] - self.transform.y
             self.update_direction(dx, dy)
 
         # 通知服务器. 我移动了
@@ -625,12 +637,11 @@ class Player(SpriteBase):
 
     def set_pos(self, x: int, y: int):
         """设置角色位置"""
-        self.position[0] = x
-        self.position[1] = y
+        self.transform.set_pos(x, y)
         # 更新全局格子坐标
         self.scene_pos = [
-            int(self.position[0] // GameManager.game_box_size),
-            int(self.position[1] // GameManager.game_box_size)
+            int(self.transform.x // GameManager.game_box_size),
+            int(self.transform.y // GameManager.game_box_size)
         ]
         self.stop_moving()
 

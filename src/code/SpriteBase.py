@@ -19,6 +19,7 @@ from uuid import uuid4
 import pygame
 from pygame.key import ScancodeWrapper
 
+from src.Base.Transform import Transform
 from src.code.Enums import SpriteState, SpriteLayer
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
@@ -31,8 +32,6 @@ class SpriteBase:
     def __init__(self, event_name: list = None):
         self.UID = uuid4().hex[:8]  # 当前NPC的唯一id
         self.clsName = self.__class__.__name__
-        # 坐标系
-        self.position = [0, 0]
         # 每个精灵最原始的坐标
         self.origin_pos = [0, 0]
         self.width = 0
@@ -115,10 +114,17 @@ class SpriteBase:
         self.move_direction: list = [1, 2, 3, 4]
         self.stand_texture: str = ""
         self.move_texture: str = ""
+
+        self.battle_texture = ""
+        self.scale_texture = 1
+        self.stand_offset = [0, 0]
+        self.move_offset = [0, 0]
         # 单帧宽度
         self.frame_width: int = 0
         self.frame_timer: int = 0
         self.frame_delay: int = 2  # 每 2 帧更新一次
+
+        self.transform = Transform()
 
         # 4方向映射（配置编号 → 角度）
         self.direction_map_4 = {
@@ -368,20 +374,18 @@ class SpriteBase:
         rect(x,y,w,h)
         """
         if self.rect is None:
-            return [self.position[0], self.position[1], 0, 0]
-        return [self.position[0], self.position[1], self.rect.width, self.rect.height]
+            return [self.transform.x, self.transform.y, 0, 0]
+        return [self.transform.x, self.transform.y, self.rect.width, self.rect.height]
 
+    # def get_pos(self):
+    #     """返回当前角色的屏幕坐标
+    #     rect(x,y,w,h)
+    #     """
+    #     return self.transform.get_pos()
 
-    def get_pos(self):
-        """返回当前角色的屏幕坐标
-        rect(x,y,w,h)
-        """
-        return self.rect.topleft
-
-    def set_pos(self, x, y):
-        """设置精灵位置"""
-        self.position[0] = x
-        self.position[1] = y
+    # def set_pos(self, x, y):
+    #     """设置精灵位置"""
+    #     self.transform.set_pos(x, y)
 
     def is_dead(self):
         """ 是否死亡状态? """
@@ -479,26 +483,6 @@ class SpriteBase:
                 min_diff = diff
                 best_dir = dir_id
         self.direction = best_dir - 1
-        # if self.name == "Eval":
-        #     _aa = ""
-        #     match self.direction:
-        #         case 0:
-        #             _aa = "下"
-        #         case 1:
-        #             _aa = "左"
-        #         case 2:
-        #             _aa = "右"
-        #         case 3:
-        #             _aa = "上"
-        #         case 4:
-        #             _aa = "左下"
-        #         case 5:
-        #             _aa = "右下"
-        #         case 6:
-        #             _aa = "左上"
-        #         case 7:
-        #             _aa = "右上"
-        #     print(f"当前朝向:{self.direction}[{_aa}]")
 
     def stop_moving(self):
         """停止移动"""
@@ -506,8 +490,6 @@ class SpriteBase:
         self.current_path_index = 0
         self.animator.play(f"stand_{self.direction}")
         self.sprite_state = SpriteState.IDLE
-
-
 
     def load_battle_anim(self, target: str, ani_name: str, npc_data: dict):
         """加载精灵的战斗动画序列"""
@@ -607,6 +589,23 @@ class SpriteBase:
     def set_direction(self, angle: int):
         """根据角度设置方向"""
         pass
+
+    def loading_model(self, actor_data: dict):
+        """加载模型"""
+        # 赋值给实例变量
+        self.stand_texture = actor_data.get("站立模型")
+        self.move_texture = actor_data.get("移动模型")
+        self.battle_texture = actor_data.get("战斗模型")
+        self.scale_texture = float(actor_data.get("模型缩放"))
+        if actor_data.get("站立偏移"):
+            self.stand_offset = [int(i) for i in actor_data.get("站立偏移").replace("'","").split(",")]
+        if actor_data.get("移动偏移"):
+            self.move_offset = [int(i) for i in actor_data.get("移动偏移").replace("'","").split(",")]
+
+        self.stand_model = [int(i) for i in actor_data.get("站立轴").split(",")]
+        self.move_model = [int(i) for i in actor_data.get("移动轴").split(",")]
+        self.stand_direction = [int(i) for i in actor_data.get("站立方向").split(",")]
+        self.move_direction = [int(i) for i in actor_data.get("移动方向").split(",")]
 
     def __str__(self):
         return f"[class SpriteBase] -> {self.name}"

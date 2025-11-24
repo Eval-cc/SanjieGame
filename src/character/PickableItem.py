@@ -172,8 +172,8 @@ class PickableItem(SpriteBase):
         self.update_animation()
 
         camera_pos = GameManager.game_camera.get_position()
-        render_x = self.render_pos[0] - camera_pos[0]
-        render_y = self.render_pos[1] - camera_pos[1]
+        render_x = self.render_pos[0] - camera_pos.x
+        render_y = self.render_pos[1] - camera_pos.y
         self.rect.x = render_x
         self.rect.y = render_y
 
@@ -192,8 +192,8 @@ class PickableItem(SpriteBase):
     def render_mask(self):
         if not self.is_animating:
             camera_pos = GameManager.game_camera.get_position()
-            render_x = self.render_pos[0] - camera_pos[0] - self.item_name_sur.width // 2
-            render_y = self.render_pos[1] - camera_pos[1] - 10
+            render_x = self.render_pos[0] - camera_pos.x - self.item_name_sur.width // 2
+            render_y = self.render_pos[1] - camera_pos.y - 10
             GameManager.game_win.blit(self.item_name_sur, (render_x + self.image.width // 2, render_y))
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):

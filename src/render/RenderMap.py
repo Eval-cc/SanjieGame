@@ -52,8 +52,8 @@ class RenderMap(SpriteBase):
         render_map = GameMapManager.game_map_render_map()
         for y in range(scene_row):
             for x in range(scene_column):
-                offset_index_y = math.floor(camera_pos[1] / self.curr_one_ime_rect.height)
-                offset_index_x = math.floor(camera_pos[0] / self.curr_one_ime_rect.width)
+                offset_index_y = math.floor(camera_pos.y / self.curr_one_ime_rect.height)
+                offset_index_x = math.floor(camera_pos.x / self.curr_one_ime_rect.width)
                 map_index_y = (y * map_size[0]) + offset_index_y * map_size[0]
                 map_index_x = offset_index_x + x + map_index_y
                 if map_index_x >= len(game_map):
@@ -94,8 +94,8 @@ class RenderMap(SpriteBase):
         scene_row = math.ceil(GameManager.game_win_rect.height / self.curr_one_ime_rect.height) + 1
 
         camera_pos = GameManager.game_camera.get_position()
-        offset_index_y = math.floor(camera_pos[1] / self.curr_one_ime_rect.height)
-        offset_index_x = math.floor(camera_pos[0] / self.curr_one_ime_rect.width)
+        offset_index_y = math.floor(camera_pos.y / self.curr_one_ime_rect.height)
+        offset_index_x = math.floor(camera_pos.x / self.curr_one_ime_rect.width)
         map_size = GameMapManager.game_map_column_row_size()
         game_map = GameMapManager.game_map_surface_path()
         render_map = GameMapManager.game_map_render_map()
@@ -109,9 +109,9 @@ class RenderMap(SpriteBase):
                 sur = render_map.get(map_name_x)
                 if sur is None:
                     continue
-                GameManager.game_win.blit(sur["image"], (sur["x"] - camera_pos[0], sur["y"] - camera_pos[1]))
-                # GameFont.render_multiple_text(f"{sur["map_name"]},[{sur["x"]},{sur["y"]}]", sur["x"] - camera_pos[0],
-                #                               sur["y"] - camera_pos[1], 200,
+                GameManager.game_win.blit(sur["image"], (sur["x"] - camera_pos.x, sur["y"] - camera_pos.y))
+                # GameFont.render_multiple_text(f"{sur["map_name"]},[{sur["x"]},{sur["y"]}]", sur["x"] - camera_pos.x,
+                #                               sur["y"] - camera_pos.y, 200,
                 #                               True)
 
     def render_mask(self):
@@ -136,8 +136,8 @@ class RenderMap(SpriteBase):
             scene_row = math.ceil(GameManager.game_win_rect.height / self.curr_one_ime_rect.height) + 1
 
             camera_pos = GameManager.game_camera.get_position()
-            offset_index_y = math.floor(camera_pos[1] / self.curr_one_ime_rect.height)
-            offset_index_x = math.floor(camera_pos[0] / self.curr_one_ime_rect.width)
+            offset_index_y = math.floor(camera_pos.y / self.curr_one_ime_rect.height)
+            offset_index_x = math.floor(camera_pos.x / self.curr_one_ime_rect.width)
 
             # view_width = GameManager.game_win_rect.width  # 相机视野宽度（像素）
             # view_height = GameManager.game_win_rect.height  # 相机视野高度（像素）
@@ -155,8 +155,8 @@ class RenderMap(SpriteBase):
                     if sur is None:
                         continue
 
-                    render_x = sur["x"] - camera_pos[0]
-                    render_y = sur["y"] - camera_pos[1]
+                    render_x = sur["x"] - camera_pos.x
+                    render_y = sur["y"] - camera_pos.y
 
                     # text_surface = GameFont.get_text_surface_line(f"遮罩点:[{mask["name"]}]",True, font_color="#00FF00",bolder=True,
                     #                                               mask_color='#BEBEBE')
@@ -199,8 +199,8 @@ class RenderMap(SpriteBase):
 
         single_box = GameManager.game_box_size
         # 修正：使用正确的single_box分量计算索引
-        offset_index_y = math.floor(camera_pos[1] / single_box)  # y方向用height
-        offset_index_x = math.floor(camera_pos[0] / single_box)  # x方向用width
+        offset_index_y = math.floor(camera_pos.y / single_box)  # y方向用height
+        offset_index_x = math.floor(camera_pos.x / single_box)  # x方向用width
 
         # 计算相机视野范围内的格子范围
         view_width = GameManager.game_win_rect.width  # 相机视野宽度（像素）
@@ -229,8 +229,8 @@ class RenderMap(SpriteBase):
             for x in range(start_x, end_x):
                 if passable[y][x] == "0":  # 如果该位置需要绘制
                     # 计算屏幕坐标（相对于相机位置）
-                    screen_x = (x * single_box) - camera_pos[0]
-                    screen_y = (y * single_box) - camera_pos[1]
+                    screen_x = (x * single_box) - camera_pos.x
+                    screen_y = (y * single_box) - camera_pos.y
                     # 确保只绘制在视图范围内的部分
                     if (0 <= screen_x < view_width and
                             0 <= screen_y < view_height):
@@ -248,7 +248,7 @@ class RenderMap(SpriteBase):
     def create_map_mask(self):
         """计算地图遮罩"""
         camera_pos = GameManager.game_camera.get_position()
-        view_x, view_y = camera_pos
+        view_x, view_y = camera_pos.x,camera_pos.y
         # 计算相机视野范围内的格子范围
         view_width = GameManager.game_win_rect.width  # 相机视野宽度（像素）
         view_height = GameManager.game_win_rect.height  # 相机视野高度（像素）

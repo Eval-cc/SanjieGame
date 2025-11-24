@@ -256,7 +256,6 @@ class GameManager:
                     en["move"](path)
                     path_list = path
                 else:
-                    print(start, end)
                     # GameMusicManager.play_sound("ui_fail")
                     GameLogManager.log_service_debug("寻路失败, 没有找到路径")
 
@@ -268,8 +267,8 @@ class GameManager:
         @return 地图格子索引
         """
         camera_pos = cls.game_camera.get_position()
-        local_x = int((x + camera_pos[0]) / cls.game_box_size)
-        local_y = int((y + camera_pos[1]) / cls.game_box_size)
+        local_x = int((x + camera_pos.x) / cls.game_box_size)
+        local_y = int((y + camera_pos.y) / cls.game_box_size)
         return [local_x, local_y]
 
     @classmethod
@@ -278,8 +277,8 @@ class GameManager:
         @return 地图的真实坐标
         """
         camera_pos = cls.game_camera.get_position()
-        local_x = (int(x) + camera_pos[0])
-        local_y = (int(y) + camera_pos[1])
+        local_x = (int(x) + camera_pos.x)
+        local_y = (int(y) + camera_pos.y)
         return [local_x, local_y]
 
     @classmethod
@@ -291,8 +290,8 @@ class GameManager:
         @return: [世界格子坐标X, 世界格子坐标Y]
         """
         camera_pos = cls.game_camera.get_position()
-        global_x = x + camera_pos[0] // cls.game_box_size
-        global_y = y + camera_pos[1] // cls.game_box_size
+        global_x = x + camera_pos.x // cls.game_box_size
+        global_y = y + camera_pos.y // cls.game_box_size
         return [global_x, global_y]
 
     @classmethod
@@ -301,8 +300,8 @@ class GameManager:
         @return 屏幕的真实坐标
         """
         camera_pos = cls.game_camera.get_position()
-        render_x = int(x) - camera_pos[0]
-        render_y = int(y) - camera_pos[1]
+        render_x = int(x) - camera_pos.x
+        render_y = int(y) - camera_pos.y
         return [render_x, render_y]
 
     @classmethod

@@ -73,14 +73,10 @@ class NpcSprite(SpriteBase):
         self.ID = self.__npc_data.get("ID")
         self.name = self.__npc_data.get("名称")
         self.type = int(self.__npc_data.get("类型"))
-        self.stand_texture = self.__npc_data.get("站立贴图")
-        self.move_texture = self.__npc_data.get("移动贴图")
-        self.battle_texture = self.__npc_data.get("战斗贴图")
 
-        self.stand_model = [int(i) for i in self.__npc_data.get("站立模型").split(";")]
-        self.move_model = [int(i) for i in self.__npc_data.get("移动模型").split(";")]
-        self.stand_direction = [int(i) for i in self.__npc_data.get("站立方向").split(",")]
-        self.move_direction = [int(i) for i in self.__npc_data.get("移动方向").split(",")]
+        user_actor_data = SourceManager.get_csv("user_actor", self.__npc_data.get("模型ID"))
+        super().loading_model(user_actor_data)
+
         self.script = self.__npc_data.get("脚本")
         self.shop_item = [item for item in self.__npc_data.get("出售道具").split(",") if item]
         self.recv_task = self.__npc_data.get("可接受任务")
@@ -117,7 +113,7 @@ class NpcSprite(SpriteBase):
 
         x, y = GameManager.scene_to_global_pos_box(self.__g_pos[0], self.__g_pos[1])
         # self.rect.x, self.rect.y = x, y
-        self.position = [x * GameManager.game_box_size, y * GameManager.game_box_size]  # 实际的像素坐标，乘以32格子大小
+        self.transform.set_pos(x * GameManager.game_box_size, y * GameManager.game_box_size)  # 实际的像素坐标，乘以32格子大小
         # 保存最原始的坐标,方便移动的太远之后,重新给移动回来, 避免NPC移动超过了它应该存在的范围
         self.origin_pos = [x, y]
         self.scene_pos = [x, y]
@@ -143,6 +139,12 @@ class NpcSprite(SpriteBase):
             image = SourceManager.load(texture)
             cols, rows = model
             fw, fh = image.get_width() // cols, image.get_height() // rows
+            # 模型是否有缩放
+            if self.scale_texture != 1:
+                image = SourceManager.ssurface_scale(image, [image.get_width() * self.scale_texture,
+                                                             image.get_height() * self.scale_texture])
+                fw *= self.scale_texture
+                fh *= self.scale_texture
 
             # 遍历每个方向
             for _dir_idx, dir_val in enumerate(directions):
@@ -200,14 +202,14 @@ class NpcSprite(SpriteBase):
     def render(self):
         self.move()
         camera_pos = GameManager.game_camera.get_position()
-        render_x = self.position[0] - camera_pos[0] - self.rect.width / 2
-        render_y = self.position[1] - camera_pos[1] - self.rect.height
+        render_x = self.transform.x - camera_pos.x - self.rect.width / 2
+        render_y = self.transform.y - camera_pos.y - self.rect.height
         # ui相关的坐标, 如:名称
         self.rect.x = render_x
         self.rect.y = render_y
         # 矩形的坐标
-        self.range_rect.x = self.position[0] - camera_pos[0] - self.range_rect.width / 2
-        self.range_rect.y = self.position[1] - camera_pos[1] - self.range_rect.height
+        self.range_rect.x = self.transform.x - camera_pos.x - self.range_rect.width / 2
+        self.range_rect.y = self.transform.y - camera_pos.y - self.range_rect.height
         # 如果当前有挑战的NPC
         if BattleManager.battle_sta() and self.sprite_state != SpriteState.ATTACK and self.sprite_state != SpriteState.DEAD:
             return
@@ -325,16 +327,16 @@ class NpcSprite(SpriteBase):
 
         # 当前目标点（世界像素坐标）
         target_x, target_y = self.current_path[self.current_path_index]
-        dx = target_x - self.position[0]
-        dy = target_y - self.position[1]
+        dx = target_x - self.transform.x
+        dy = target_y - self.transform.y
         distance = (dx ** 2 + dy ** 2) ** 0.5
 
         if distance <= self.move_speed:
             # 到达目标
-            self.position[0], self.position[1] = target_x, target_y
+            self.transform.set_pos(target_x, target_y)
             self.scene_pos = [
-                int(self.position[0] // GameManager.game_box_size),
-                int(self.position[1] // GameManager.game_box_size)
+                int(self.transform.x // GameManager.game_box_size),
+                int(self.transform.y // GameManager.game_box_size)
             ]
             self.current_path_index += 1
 
@@ -342,20 +344,20 @@ class NpcSprite(SpriteBase):
                 self.stop_moving()
             else:
                 next_target = self.current_path[self.current_path_index]
-                self.update_direction(next_target[0] - self.position[0],
-                                      next_target[1] - self.position[1])
+                self.update_direction(next_target[0] - self.transform.x,
+                                      next_target[1] - self.transform.y)
             return
 
         # 按速度移动
         move_x = (dx / distance) * self.move_speed
         move_y = (dy / distance) * self.move_speed
-        self.position[0] += move_x
-        self.position[1] += move_y
+        self.transform.x += move_x
+        self.transform.y += move_y
 
         # 更新全局格子坐标
         self.scene_pos = [
-            int(self.position[0] // GameManager.game_box_size),
-            int(self.position[1] // GameManager.game_box_size)
+            int(self.transform.x // GameManager.game_box_size),
+            int(self.transform.y // GameManager.game_box_size)
         ]
 
     def stop_moving(self):
@@ -383,8 +385,8 @@ class NpcSprite(SpriteBase):
 
         # 立即更新方向（指向第一个目标点）
         if self.current_path:
-            dx = self.current_path[0][0] - self.position[0]
-            dy = self.current_path[0][1] - self.position[1]
+            dx = self.current_path[0][0] - self.transform.x
+            dy = self.current_path[0][1] - self.transform.y
             self.update_direction(dx, dy)
 
     def update_sprite(self):
@@ -395,15 +397,15 @@ class NpcSprite(SpriteBase):
         if u_player:
             play_pos = u_player.get_pos_world()
             camera_pos = GameManager.game_camera.get_position()
-            px = play_pos[0] - camera_pos[0]
-            py = play_pos[1] - camera_pos[1]
-            if self.range_rect.collidepoint(px,py):
+            px = play_pos[0] - camera_pos.x
+            py = play_pos[1] - camera_pos.y
+            if self.range_rect.collidepoint(px, py):
                 # print(f"碰到了:{self.name}")
                 # 获取玩家脚部位置（通常是玩家坐标的底部）
                 player_foot_y = play_pos[1] + play_pos[3]  # 假设height是精灵高度
 
                 # 获取NPC的中心位置
-                npc_center_y = self.position[1] + self.height / 2
+                npc_center_y = self.transform.y + self.height / 2
                 self.has_behind = player_foot_y > npc_center_y
                 # 如果玩家的脚在NPC中心的下方，视为在背面
                 # if self.has_behind:
@@ -440,8 +442,8 @@ class NpcSprite(SpriteBase):
         if len(self.default_dialog) > 0:
             # 修改当前NPC的朝向 面对主角
             next_target = GameManager.get("主角").get_pos_world()
-            self.update_direction(next_target[0] - self.position[0],
-                                  next_target[1] - self.position[1])
+            self.update_direction(next_target[0] - self.transform.x,
+                                  next_target[1] - self.transform.y)
             self.has_dialog = True
             GameManager.game_dialog.show_dialog(self.default_dialog, self)
             return
@@ -495,7 +497,7 @@ class NpcSprite(SpriteBase):
         GameMapManager.CURR_BATTLE_NPC_UID.append(self.UID)
         arr = []
         # 创建战斗用的NPC副本
-        for i in range(20):  # 创建3个副本
+        for i in range(3):  # 创建3个副本
             battle_npc = GameMapManager.add_npc(self.ID, self.__g_pos[0], self.__g_pos[1], self.direction)
             battle_npc.load_battle_anim("enemy", self.battle_texture, self.__npc_data)
             battle_npc.sprite_state = SpriteState.ATTACK
