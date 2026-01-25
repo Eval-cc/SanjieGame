@@ -19,10 +19,17 @@ class GameComponentBase:
         self.rect: pygame.Rect = None
         self.offset: Tuple[int, int] = None
         self.need_redraw = True
+        self.parent_id = None
 
     def render(self):
         pass
 
+
+    def update(self):
+        """更新滑块状态"""
+        if self.need_redraw:
+            self.render()
+            
     def update_pos(self, x: int, y: int):
         """
         更新组件位置
@@ -32,3 +39,21 @@ class GameComponentBase:
         self.rect.x = self.offset[0] + x
         self.rect.y = self.offset[1] + y
         self.need_redraw = True
+
+
+    def update_size(self, w: int, h: int):
+        """
+        更新组件尺寸
+        :param w: 宽
+        :param h: 高
+        """
+        self.rect.w = w
+        self.rect.h = h
+        self.need_redraw = True
+
+    def destroy(self):
+        """
+        组件销毁
+        :return:
+        """
+        pass

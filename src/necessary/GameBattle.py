@@ -432,7 +432,7 @@ class _Battle(SpriteBase):
 
         game_ui.set_surface_ui("指令框_人物", bag_sur)
 
-    def mouse_down_ui(self):
+    def mouse_down_ui(self, **args):
         """鼠标按下事件-UI"""
         if not self.__GUI_rect_list:
             return

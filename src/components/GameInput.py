@@ -15,7 +15,6 @@ from pygame.key import ScancodeWrapper
 
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 
 
@@ -23,7 +22,7 @@ class GameInput(SpriteBase, GameComponentBase):
     def __init__(self, render_surface: pygame.Surface, rect: pygame.Rect, placeholder: str = "", font_size: int = 16,
                  text_color: str = "#000000", bg_color: str = "#FFFFFF",
                  border_color: str = "#000000", border_width: int = 1, is_password: bool = False,
-                 offset: Tuple[int, int] = (0, 0), field: str = ""):
+                 offset: Tuple[int, int] = (0, 0), field: str = "", parent_id: str = None):
         """
         初始化输入框组件
         :param rect: 输入框位置和大小
@@ -36,6 +35,7 @@ class GameInput(SpriteBase, GameComponentBase):
         :param is_password: 是否为密码框
         :param offset: 偏移值
         :param field: 是否有字段
+        :param parent_id: 父组件ID
         """
         super().__init__([
             ["输入框点击事件", "输入框键盘按下事件", "输入框键盘抬起事件", "输入框键盘长按事件", "输入框候选字事件"],
@@ -55,15 +55,19 @@ class GameInput(SpriteBase, GameComponentBase):
         self.offset = offset
         self._raw_field_text = field
         self.field_surface = None
+        self.parent_id = parent_id
+
+        self._field_rect = self.rect.copy()
         if len(field) > 0:
             self.field_surface = GameFont.get_text_surface_line(field, True, font_color=text_color,
                                                                 font_size=font_size - 2)
             self.__field_size = GameFont.get_text_size(field)
             self.__field_size[0] += 5
-            self._field_rect = self.rect.copy()
             self.rect.x += self.__field_size[0]
             self._field_rect.y = self.__field_size[1] // 2 + self.rect.y
             self.rect.width -= self.__field_size[0]
+        else:
+            self.__field_size = [0, 0]
 
         # 输入状态
         self.text = ""
@@ -86,6 +90,7 @@ class GameInput(SpriteBase, GameComponentBase):
         # self.ime_composing = False  # 是否正在输入法组合状态
         # self.composing_text = ""  # 输入法组合文本
 
+        from src.manager.GameEvent import GameEvent
         GameEvent.add_input(self)
         # 初始化缓存表面
         self._create_base_surface()
@@ -124,7 +129,8 @@ class GameInput(SpriteBase, GameComponentBase):
             if self.field_surface:
                 self.render_surface.blit(self.field_surface, self._field_rect)
             self.render_surface.blit(self.cached_surface, self.rect)
-            return
+            return self.cached_surface
+
         self._create_base_surface()
         # 处理文本显示
         display_text = self.text if self.text else self.placeholder
@@ -181,10 +187,11 @@ class GameInput(SpriteBase, GameComponentBase):
         # 渲染字段名
         if self.field_surface:
             self.render_surface.blit(self.field_surface, self._field_rect)
+        return self.cached_surface
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标点击事件"""
-
+        from src.manager.GameEvent import GameEvent
         for _com in GameEvent.all_input_pool():
             if _com == self:
                 continue
@@ -357,6 +364,7 @@ class GameInput(SpriteBase, GameComponentBase):
         super().destroy()
         # if self.has_focus:
         #     pygame.key.stop_text_input()
+        from src.manager.GameEvent import GameEvent
         GameEvent.remove_input(self)
 
     def update_pos(self, x: int, y: int):

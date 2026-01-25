@@ -14,7 +14,6 @@ import pygame
 from typing import Dict, Tuple, Optional, Callable, List
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.SourceManager import SourceManager
 from src.system.GameMusic import GameMusicManager
@@ -30,7 +29,8 @@ class GameCheckBox(SpriteBase, GameComponentBase):
                  border_width: int = 1, check_width: int = 2,
                  offset: Tuple[int, int] = (0, 0),
                  bg_image: Optional[str | pygame.Surface] = None,
-                 bg_check_image: Optional[str | pygame.Surface] = None):
+                 bg_check_image: Optional[str | pygame.Surface] = None,
+                 parent_id:str = None):
         """
         初始化单选框/复选框组件
         :param render_surface: 渲染目标表面
@@ -50,6 +50,7 @@ class GameCheckBox(SpriteBase, GameComponentBase):
         :param offset: 位置偏移量
         :param bg_image: 图片 -- 当传入了surface的时候优先展示图片
         :param bg_check_image: 选中的图片
+        :param parent_id: 父组件ID
         """
         super().__init__([["切换事件"], [1]])
         self.rect = rect
@@ -69,6 +70,9 @@ class GameCheckBox(SpriteBase, GameComponentBase):
         self.check_width = check_width
         self.render_surface = render_surface
         self.offset = offset
+
+        self.bg_image = None
+        self.parent_id = parent_id
 
         if bg_image:
             # 未选中的状态
@@ -138,7 +142,7 @@ class GameCheckBox(SpriteBase, GameComponentBase):
         """渲染组件到指定表面"""
         if not self.need_redraw:
             self.render_surface.blit(self.cached_surface, self.rect)
-            return
+            return self.cached_surface
 
         # 清空缓存表面
         self.cached_surface.fill((0, 0, 0, 0))
@@ -220,6 +224,8 @@ class GameCheckBox(SpriteBase, GameComponentBase):
         self.render_surface.blit(self.cached_surface, self.rect)
         self.need_redraw = False
 
+        return self.cached_surface
+
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标按下事件"""
         self.is_checked = not self.is_checked
@@ -246,18 +252,3 @@ class GameCheckBox(SpriteBase, GameComponentBase):
     def set_on_toggle(self, callback: Callable[[bool], None]):
         """设置状态改变回调函数"""
         self.on_toggle = callback
-
-    def update(self):
-        """更新组件状态"""
-        if self.need_redraw:
-            self.render()
-
-    def update_pos(self, x: int, y: int):
-        """
-        更新组件位置
-        :param x: x坐标
-        :param y: y坐标
-        """
-        self.rect.x = self.offset[0] + x
-        self.rect.y = self.offset[1] + y
-        self.need_redraw = True

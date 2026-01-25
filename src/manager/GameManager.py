@@ -312,7 +312,8 @@ class GameManager:
         """
         from src.manager.GameMapManager import GameMapManager
         from src.render.GameLogin import GameLogin
-        del cls.shop_system
+        if cls.shop_system:
+            del cls.shop_system
 
         game_ui: "GameUI" = cls.get("游戏UI")
         if game_ui:

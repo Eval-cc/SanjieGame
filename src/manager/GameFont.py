@@ -28,7 +28,7 @@ class GameFont:
     # 字体对象字典，按名称存储字体
     __font_dict: Dict[str, pygame.freetype.Font] = {}
     # 渲染的对象字典
-    __surface_list: Dict[str, pygame.surface] = {}
+    __surface_list: Dict[str, pygame.Surface] = {}
 
     __default_font_path: List[str] = []
 

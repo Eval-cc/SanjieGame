@@ -231,7 +231,7 @@ class Animator:
             else:
                 name = f"{name}_{direction_map_8[anim_dir] - 1}"
         if name not in self.clips:
-            raise ValueError(f"Animation {name} not found")
+            raise ValueError(f"动画 {name} 不存在")
 
         if not restart and self.current == name:
             return  # 跳过重复播放

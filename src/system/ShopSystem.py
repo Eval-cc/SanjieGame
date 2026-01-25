@@ -70,13 +70,14 @@ class ShopSystem:
 
         # 道具锁定框
         self.item_lock = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
-                                                    [20, 20])
+                                                      [20, 20])
         # 道具描述UI的道具图片背景
         self.icon_item_bg = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/icon_skill_bg.png"), [60, 60])
 
-        shop_left_bg = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/window_shop.png"),
-                                                  [250, self.shop_size[1] - 30])
+        shop_left_bg = SourceManager.ssurface_scale(
+            SourceManager.load(f"{SourceManager.ui_system_path}/window_shop.png"),
+            [250, self.shop_size[1] - 30])
         shop_right_bg = SourceManager.load(f"{SourceManager.ui_system_path}/window_empty.png")
         shop_right_bg = SourceManager.ssurface_scale(shop_right_bg, [250, 290])
         dialog_title = SourceManager.ssurface_scale(
@@ -371,24 +372,24 @@ class ShopSystem:
                 return True
         return False
 
-    def prev_page(self):
+    def prev_page(self, **args):
         """切换上一页"""
         self.current_page = (self.current_page - 2) % self.max_page + 1
         self.__select_item = None
 
-    def next_page(self):
+    def next_page(self, **args):
         """切换下一页"""
         self.current_page = self.current_page % self.max_page + 1
         self.__select_item = None
 
     """右侧背包"""
 
-    def prev_page_r(self):
+    def prev_page_r(self, **args):
         """切换上一页"""
         self.r_current_page = (self.r_current_page - 2) % self.r_max_page + 1
         self.__select_item = None
 
-    def next_page_r(self):
+    def next_page_r(self, **args):
         """切换下一页"""
         self.r_current_page = self.r_current_page % self.r_max_page + 1
         self.__select_item = None
@@ -416,7 +417,7 @@ class ShopSystem:
                 return item
         return None
 
-    def mouse_down(self):
+    def mouse_down(self, **args):
         mouse_pos = pygame.mouse.get_pos()
         game_ui: "GameUI" = self.gm.get("游戏UI")
         bag_sprite = game_ui.get_surface_sprite("游戏商城")  # 需要加上背包的偏移

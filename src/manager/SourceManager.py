@@ -23,7 +23,7 @@ from src.manager.GameLogManger import GameLogManager
 class SourceManager:
     """资源管理器"""
     __source_dict: Dict[str, pygame.Surface] = {}
-    __csv_dict:Dict[str,dict] = {}
+    __csv_dict: Dict[str, dict] = {}
     """ui资源的根目录"""
     ui_root_path = r"Graphics"
     """存放csv的资源"""
@@ -52,6 +52,8 @@ class SourceManager:
     """地图json配置脚本目录"""
     cfg_task_path = r"resources\sv_task"
     """对话脚本目录"""
+    cfg_ui_path = r"resources\language\ui"
+    """游戏UI目录"""
     cfg_root_path = "resources"
     """资源包目录"""
 
@@ -70,10 +72,10 @@ class SourceManager:
 
     @staticmethod
     def Awake():
-        # 如果是开发生产环境
+        # 如果是生产环境
         game_root = os.path.dirname(os.path.abspath(sys.argv[0]))
 
-        # 重写所有路径为绝对路径- 解决打包之后无法找打资源的问题
+        # 重写所有路径为绝对路径- 解决打包之后无法找到资源的问题
         SourceManager.ui_root_path = os.path.join(game_root, "Graphics")
         SourceManager.ui_face_path = os.path.join(game_root, "Graphics/Faces")
         SourceManager.ui_map_path = os.path.join(game_root, "Graphics/Maps")
@@ -88,6 +90,8 @@ class SourceManager:
         SourceManager.cfg_lua_path = os.path.join(game_root, "resources/scripts")
         SourceManager.cfg_map_path = os.path.join(game_root, "resources/config")
         SourceManager.cfg_task_path = os.path.join(game_root, "resources/sv_task")
+        SourceManager.cfg_ui_path = os.path.join(game_root, r"resources\language\ui")
+
         SourceManager.cfg_root_path = os.path.join(game_root, "resources")
 
         SourceManager.log_root_path = os.path.join(game_root, "logs")
@@ -158,10 +162,14 @@ class SourceManager:
 
             x_offset += w + frame_padding
 
-        return atlas_surface, frame_rects
+        return {
+            "surface": atlas_surface,
+            "rects": frame_rects,
+            "len": len(processed_frames)
+        }
 
     @staticmethod
-    def load(file_path: str, scale:list[int] = None):
+    def load(file_path: str, scale: list[int] = None):
         """
         加载Graphics目录下面的资源
         @file_path 文件路径
@@ -182,7 +190,26 @@ class SourceManager:
             elif file_name.lower().endswith(".jpg"):
                 SourceManager.__source_dict[file_path] = pygame.image.load(root_path)
             elif file_name.lower().endswith(".gif"):
-                SourceManager.__source_dict[file_path] = SourceManager.load_gif_as_atlas(root_path)[0]
+                sur = SourceManager.load_gif_as_atlas(root_path)
+                if scale:
+                    sur["surface"] = SourceManager.ssurface_scale(sur.get("surface"), scale)
+                    # 2. 重新计算每一帧的宽度 (关键：直接平分)
+                    total_w = sur["surface"].get_width()
+                    total_h = sur["surface"].get_height()
+                    frame_count = sur.get("len")
+
+                    # 单帧宽度 = 总宽 / 帧数 (这里可能包含 padding 的缩放，但因为是平分，所以绝对不会越界)
+                    frame_w = total_w // frame_count
+
+                    new_rects = []
+                    for i in range(frame_count):
+                        # 这里的坐标计算保证了 max(left + width) <= total_w
+                        rect = pygame.Rect(i * frame_w, 0, frame_w, total_h)
+                        new_rects.append(rect)
+
+                    sur["rects"] = new_rects
+
+                return sur
             else:
                 raise Exception(f"暂不支持的文件类型,{file_name.split(".").pop()}")
             # 是否指定了缩放
@@ -216,7 +243,7 @@ class SourceManager:
         return None
 
     @staticmethod
-    def export_surface(surface:pygame.Surface, out_path:str, out_name:str, mkdir: bool = False):
+    def export_surface(surface: pygame.Surface, out_path: str, out_name: str, mkdir: bool = False):
         """将surface导出为本地文件,需要携带后缀"""
         if not os.path.isdir(out_path):
             if not mkdir:
@@ -224,18 +251,18 @@ class SourceManager:
                 return False
             # 创建目录
             os.makedirs(out_path)
-        pygame.image.save(surface,f"{out_path}/{out_name}")
+        pygame.image.save(surface, f"{out_path}/{out_name}")
         return True
 
     @staticmethod
-    def get_csv(csv_name:str, find_id:str = None):
+    def get_csv(csv_name: str, find_id: str = None):
         """获取指定csv配置文件"""
         if find_id:
             return deepcopy(SourceManager.__csv_dict.get(csv_name).get(str(find_id)))
         return deepcopy(SourceManager.__csv_dict.get(csv_name))
 
     @staticmethod
-    def set_csv(csv_name:str,csv_data:list, has_raw:bool = False):
+    def set_csv(csv_name: str, csv_data: list, has_raw: bool = False):
         """更新csv配置文件信息"""
         if len(csv_data) == 0:
             GameLogManager.log_service_error("无效的csv列表数据")
@@ -247,19 +274,18 @@ class SourceManager:
             return
         # 数组的首位元素列表是 表头字段, 弹出来
         head_list = csv_data.pop(0)
-        dict_list  = [dict(zip(head_list, values)) for values in csv_data]
+        dict_list = [dict(zip(head_list, values)) for values in csv_data]
         SourceManager.__csv_dict[csv_name] = {val.get("ID"): val for val in dict_list}
 
-
     @staticmethod
-    def ssurface_scale(surface:pygame.Surface,size:list[float|int]):
+    def ssurface_scale(surface: pygame.Surface, size: list[float | int]):
         """平滑的将surface缩放到任意大小"""
         if surface is None:
             return surface
-        return pygame.transform.smoothscale(surface,size)
+        return pygame.transform.smoothscale(surface, size)
 
     @staticmethod
-    def create_surface_mask(surface:pygame.Surface):
+    def create_surface_mask(surface: pygame.Surface):
         """给精灵生成遮罩计算"""
         if type(surface) != pygame.surface.Surface:
             raise Exception(f"获取遮罩错误,请传入正确的surface对象, 当前:[{type(surface)}]")
@@ -268,7 +294,7 @@ class SourceManager:
         return pygame.mask.from_surface(surface)
 
     @staticmethod
-    def set_surface_alpha(surface:pygame.Surface, alpha:int = 255):
+    def set_surface_alpha(surface: pygame.Surface, alpha: int = 255):
         """调整精灵的透明通道"""
         sur = surface.copy()
         sur.set_alpha(alpha)

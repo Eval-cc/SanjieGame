@@ -14,7 +14,6 @@ import pygame
 from typing import Dict, Tuple, Optional, Callable
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
-from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.manager.SourceManager import SourceManager
 
@@ -29,7 +28,8 @@ class GameSlider(SpriteBase, GameComponentBase):
                  show_value: bool = True, value_format: str = "{:.0f}",
                  offset: Tuple[int, int] = (0, 0),
                  bg_slider_image: Optional[str | pygame.Surface] = None,
-                 bg_border_image: Optional[str | pygame.Surface] = None
+                 bg_border_image: Optional[str | pygame.Surface] = None,
+                 parent_id: str = None
                  ):
         """
         初始化滑块组件
@@ -51,6 +51,7 @@ class GameSlider(SpriteBase, GameComponentBase):
         :param offset: 位置偏移量
         :param bg_slider_image: 滑块背景
         :param bg_border_image: 滑块矩形
+        :param parent_id: 父组件ID
         """
         super().__init__([["滑块拖动事件"], [1]])
         self.rect = rect
@@ -99,6 +100,7 @@ class GameSlider(SpriteBase, GameComponentBase):
         # 缓存表面
         self.cached_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
         self.need_redraw = True
+        self.parent_id = parent_id
 
     @property
     def value(self) -> float:
@@ -123,7 +125,7 @@ class GameSlider(SpriteBase, GameComponentBase):
         """渲染滑块到指定表面"""
         if not self.need_redraw:
             self.render_surface.blit(self.cached_surface, self.rect)
-            return
+            return self.cached_surface
 
         # 清空缓存表面
         self.cached_surface.fill((0, 0, 0, 0))
@@ -184,6 +186,8 @@ class GameSlider(SpriteBase, GameComponentBase):
         # 渲染到目标表面
         self.render_surface.blit(self.cached_surface, self.rect)
         self.need_redraw = False
+
+        return self.cached_surface
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标按下事件"""
@@ -263,18 +267,3 @@ class GameSlider(SpriteBase, GameComponentBase):
     def set_on_value_changed(self, callback: Callable[[float], None]):
         """设置值改变回调函数"""
         self.on_value_changed = callback
-
-    def update(self):
-        """更新滑块状态"""
-        if self.need_redraw:
-            self.render()
-
-    def update_pos(self, x: int, y: int):
-        """
-        更新组件位置
-        :param x: x坐标
-        :param y: y坐标
-        """
-        self.rect.x = self.offset[0] + x
-        self.rect.y = self.offset[1] + y
-        self.need_redraw = True

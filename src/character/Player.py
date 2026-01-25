@@ -186,7 +186,24 @@ class Player(SpriteBase):
                                    "name": "地图光标",
                                    "show": True,
                                    # "has_draw": True
+                               })
+
+        skill_bg = SourceManager.load(f"{SourceManager.ui_system_path}/none_window.png", [600, 400])
+        game_ui.load_system_ui(skill_bg,
+                               [600, 400],
+                               "middle",
+                               options=
+                               {
+                                   "name": "角色技能",
+                                   "mouse_down": self.__click_status_ui,
+                                   "drag": True,
+                                   "event_layer": 5,
+                                   "drag_rect": ["auto", "auto", "auto", "20"],
+                                   "update_blit": self.__update_blit,
+                                   "listen_keyboard": lambda: game_ui.get_surface_show("角色技能")
                                }, sort=True)
+        self.skill_bg_gif = SourceManager.load(f"{SourceManager.ui_system_path}/dt_bg.gif", skill_bg.get_rect().size)
+        self.skill_bg_gif_idx = 0
 
     def __init_status(self, data: dict):
         try:
@@ -244,8 +261,8 @@ class Player(SpriteBase):
             GameDialogBoxManager.dialog(f"初始化失败 {ae}")
             # GameLogManager.log_service_error(f"玩家初始化失败: {ae}")
             GameManager.logout()
-            time.sleep(1)
-            raise ae
+            # time.sleep(1)
+            # raise ae
         except Exception as e:
             GameDialogBoxManager.dialog(f"初始化失败 {e}")
             # GameLogManager.log_service_error(f"玩家初始化失败: {e}")
@@ -292,7 +309,7 @@ class Player(SpriteBase):
                                    options=
                                    {
                                        "name": f"__u_tool_{btn["name"]}",
-                                       "mouse_down": partial(self._tool_btn, btn["name"]),
+                                       "mouse_down": partial(self._tool_btn, cbk_name=btn["name"]),
                                        "frame": {
                                            "size": _size,
                                            "count": 2,
@@ -408,10 +425,10 @@ class Player(SpriteBase):
             # 默认播放站立动画
             self.animator.play(f"stand_{self.direction}", speed=0.15)
         except KeyboardInterrupt as ke:
-            GameDialogBoxManager.dialog(ke)
+            GameDialogBoxManager.dialog(str(ke))
             GameManager.logout()
         except Exception as e:
-            GameDialogBoxManager.dialog(e)
+            GameDialogBoxManager.dialog(str(e))
             GameManager.logout()
 
     def __str__(self):
@@ -587,8 +604,16 @@ class Player(SpriteBase):
         game_ui: GameUI = GameManager.get("游戏UI")
         return game_ui.get_surface_show("角色属性")
 
-    def __click_status_ui(self):
-        GameLogManager.log_service_debug("点击属性UI")
+    def __click_status_ui(self, **args):
+        game_ui: GameUI = GameManager.get("游戏UI")
+        if game_ui.get_surface_show("角色属性"):
+            GameLogManager.log_service_debug("点击属性UI")
+            return
+
+        if game_ui.get_surface_show("角色技能"):
+            skill_sur = game_ui.get_surface_ui("角色技能")
+            GameLogManager.log_service_debug("点击角色技能")
+            return
 
     def __click_map(self):
         """点击小地图"""
@@ -604,17 +629,30 @@ class Player(SpriteBase):
         sur = game_ui.get_surface_ui("角色属性")
         fun_tool_sur = game_ui.get_surface_ui("功能区")
 
-        for k in STATUS_POS.keys():
-            if hasattr(self, k):
-                if k == "healthy":
-                    sur.blit(GameFont.get_text_surface_line(f"{self.healthy} / {self.max_healthy}", True),
-                             STATUS_POS[k])
-                    continue
-                sur.blit(GameFont.get_text_surface_line(str(getattr(self, k)), True), STATUS_POS[k])
-            else:
-                sur.blit(GameFont.get_text_surface_line("0", True), STATUS_POS[k])
+        if game_ui.get_surface_show("角色属性"):
+            for k in STATUS_POS.keys():
+                if hasattr(self, k):
+                    if k == "healthy":
+                        sur.blit(GameFont.get_text_surface_line(f"{self.healthy} / {self.max_healthy}", True),
+                                 STATUS_POS[k])
+                        continue
+                    sur.blit(GameFont.get_text_surface_line(str(getattr(self, k)), True), STATUS_POS[k])
+                else:
+                    sur.blit(GameFont.get_text_surface_line("0", True), STATUS_POS[k])
+            game_ui.set_surface_ui("角色属性", sur)
 
-        game_ui.set_surface_ui("角色属性", sur)
+        if game_ui.get_surface_show("角色技能"):
+            self.skill_bg_gif_idx = (self.skill_bg_gif_idx + 1) % self.skill_bg_gif.get("len")
+            if self.skill_bg_gif_idx == 0:
+                self.skill_bg_gif_idx = 0
+            skill_sur = game_ui.get_surface_ui("角色技能")
+
+            curr_rect = self.skill_bg_gif.get("rects")[self.skill_bg_gif_idx]
+            curr_skill_bg = self.skill_bg_gif.get("surface").subsurface(curr_rect)
+            skill_sur.blit(curr_skill_bg, (0, 0))
+            self.update_blit = True
+            game_ui.set_surface_ui("角色技能", skill_sur)
+
         game_ui.set_surface_ui("功能区", fun_tool_sur)
 
     def __update_blit_map(self):
@@ -672,8 +710,9 @@ class Player(SpriteBase):
             a = game_ui.get_surface_sprite(f"__u_tool_{b["name"]}")
             a["show"] = True
 
-    def _tool_btn(self, cbk_name: str):
+    def _tool_btn(self, **args):
         game_ui: GameUI = GameManager.get("游戏UI")
+        cbk_name = args.get("cbk_name")
         match cbk_name:
             case "属性":
                 game_ui.change_ui_layer("角色属性")
@@ -687,6 +726,9 @@ class Player(SpriteBase):
                     w_server.disconnect()
                 else:
                     GameManager.logout()
+            case "技能":
+                game_ui.change_ui_layer("角色技能")
+                return
             case _:
                 GameLogManager.log_service_error(f"无法识别的指令: {cbk_name}")
 

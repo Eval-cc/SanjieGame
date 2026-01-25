@@ -124,7 +124,7 @@ class GameUI(SpriteBase):
             "surface_raw": ui_surface,
             "rect": sur_rect,
             "mask": SourceManager.create_surface_mask(ui_surface),
-            "mouse_down": None if options.get("mouse_down") is None else options.get("mouse_down"),
+            "mouse_down": None if options.get("mouse_down") is None else options.get("mouse_down", lambda e : None),
             "event_layer": len(self.rect_list) + 2 if options.get("event_layer") is None else options.get(
                 "event_layer"),
             "render_layer": len(self.rect_list) + 5 if options.get("render_layer") is None else options.get(
@@ -296,9 +296,9 @@ class GameUI(SpriteBase):
                     if target.get("bubble"):
                         # 如果当前UI 是允许冒泡的. 那么执行事件之后照样返回True
                         if cl:
-                            cl()
+                            cl(event=event)
                         return True
-                    return False if cl is None else cl()
+                    return False if cl is None else cl(event=event)
 
                 self.drag_first_pos = [event.get("mouse_pos")[0], event.get("mouse_pos")[1]]
                 self.__hover_surface = target  # self.rect_list[self.get_click_sprite_index()]
@@ -306,7 +306,7 @@ class GameUI(SpriteBase):
                                         self.drag_first_pos[1] - self.__hover_surface.get("rect").y]
                 return False
 
-            return False if cl is None else cl()
+            return False if cl is None else cl(event=event)
         return True
 
     def mouse_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
@@ -353,6 +353,8 @@ class GameUI(SpriteBase):
 
     def mouse_out(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.get_click_sprite_index() >= 0:
+            if self.get_click_sprite_index() > len(self.rect_list):
+                return False
             target: dict = self.rect_list[self.get_click_sprite_index()]
             self.__click_surface = target
             move_fun = target.get("mouse_out")

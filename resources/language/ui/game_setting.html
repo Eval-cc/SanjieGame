@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<div id="app" width="350" height="300" color="#FF15FF"
+     padding="0 0 0 10">
+    <tabs>
+        <tab-item title="系统设置" id="sys" background-image="#ROOT_S\gw_b1.png" width="80" height="25">
+            <p>这里是系统设置的内容...</p>
+            <p color="#FFFFFF">啊哈哈哈哈</p>
+            <a href="#common_1">继续</a>
+            <img src="task_1/207.PNG" alt=""/>
+            <slider id="volume"></slider>
+            <input type="text" id="price11"
+                   placeholder="这是一个输入框"
+                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
+                   clip-path="-1 30 80 60"
+                   field="什么?"
+            />
+        </tab-item>
+        <tab-item title="按键绑定" id="keys" background-image="#ROOT_S\gw_b1.png" width="80" height="25">
+            <p>这里是修改按键的内容...</p>
+            <p color="#FFFFFF">嘿嘿嘿</p>
+            <a href="#common_1">继续</a>
+            <button
+                    font-size="13"
+                    color="#8B4726"
+                    data-client="client://bank&withdraw">
+                仓库取
+            </button>
+            <input type="text" id="total" disabled/>
+            <input type="text" id="price"
+                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
+                   clip-path="-1 30 80 60"
+            />
+        </tab-item>
+    </tabs>
+    <row>
+        <button background-image="#ROOT_S\gw_b1.png" @click="confirm"  width="80" height="25">确认</button>
+        <button background-image="#ROOT_S\gw_b1.png" @click="cancel">取消</button>
+    </row>
+</div>
+</body>
+</html>

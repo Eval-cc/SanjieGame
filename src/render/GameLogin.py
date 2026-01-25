@@ -11,6 +11,8 @@
 """
 
 import os.path
+import webbrowser
+import sys
 import threading
 import time
 from random import choice
@@ -157,55 +159,53 @@ class GameLogin(SpriteBase):
         pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
                          (0, 30, _width, _height - 30), 1)
 
-        [_, login_ui_rect, _] = game_ui.load_system_ui(dialog_sur,
-                                                       [_width, _height],
-                                                       "top_right_center",
-                                                       {
-                                                           "name": "登录账号UI",
-                                                           "drag": True,
-                                                           "drag_rect": ["auto", "auto", "-25px", 30],
-                                                           "move_callback": self.login_ui_move,
-                                                           "mouse_move": lambda: True,
-                                                           "show": True,
-                                                           "bubble": True
-                                                       }, sort=True)
+        [_, login_ui_rect, login_ui_params] = game_ui.load_system_ui(dialog_sur,
+                                                                     [_width, _height],
+                                                                     "top_right_center",
+                                                                     {
+                                                                         "name": "登录账号UI",
+                                                                         "drag": True,
+                                                                         "drag_rect": ["auto", "auto", "-25px", 30],
+                                                                         "move_callback": self.login_ui_move,
+                                                                         "mouse_move": lambda: True,
+                                                                         "show": True,
+                                                                         "bubble": True
+                                                                     }, sort=True)
 
         self.__components: List[Union["GameComponentBase"]] = []
 
         self.user_name = GameInput(self.gm.game_win, pygame.Rect([login_ui_rect.x, login_ui_rect.y, 170, 30]),
                                    placeholder="请输入账号", offset=(10, 50), bg_color="#000000", text_color="#FFFFFF",
-                                   field="账号")
+                                   field="账号", parent_id=login_ui_params.get("name"))
         self.user_pwd = GameInput(self.gm.game_win, pygame.Rect([login_ui_rect.x, login_ui_rect.y, 170, 30]),
                                   placeholder="请输入密码", is_password=True, offset=(10, 90), bg_color="#000000",
-                                  text_color="#FFFFFF", field="密码")
+                                  text_color="#FFFFFF", field="密码", parent_id=login_ui_params.get("name"))
+
+        # 1. 提取公共参数（减少重复赋值）
+        common_props = {
+            "font_size": 10,
+            "text_color": "#FFFFFF",
+            "hover_color": "#2980b9",
+            "press_color": "#1a5276",
+            "bg_image": SourceManager.ui_system_path + "/gw_b1.png",
+            "bg_press_image": SourceManager.ui_system_path + "/gw_b2.png"
+        }
 
         self.enter_game = GameButton(
             self.gm.game_win,  # 渲染表面
             pygame.Rect(login_ui_rect.x, login_ui_rect.y, 60, 25),  # 位置和大小
             "进入游戏",
-            font_size=10,
-            text_color="#FFFFFF",
-            # bg_color="#3498db",
+            offset=(20, 140), parent_id=login_ui_params.get("name"),
             border_color="#2980b9",
-            hover_color="#2980b9",
-            press_color="#1a5276",
-            bg_image=SourceManager.ui_system_path + "/gw_b1.png",
-            bg_press_image=SourceManager.ui_system_path + "/gw_b2.png",
-            offset=(20, 140)
+            **common_props
         )
         self.enter_game_offline = GameButton(
             self.gm.game_win,  # 渲染表面
             pygame.Rect(login_ui_rect.x, login_ui_rect.y, 60, 25),  # 位置和大小
             "离线模式",
-            font_size=10,
-            text_color="#FFFFFF",
-            # bg_color="#3498db",
             border_color="#2980b9",
-            hover_color="#2980b9",
-            press_color="#1a5276",
-            bg_image=SourceManager.ui_system_path + "/gw_b1.png",
-            bg_press_image=SourceManager.ui_system_path + "/gw_b2.png",
-            offset=(110, 140)
+            offset=(110, 140), parent_id=login_ui_params.get("name"),
+            **common_props
         )
         # 创建滑块实例
         self.music_slider = GameSlider(
@@ -225,7 +225,8 @@ class GameLogin(SpriteBase):
             slider_height=30,  # 滑块高度
             show_value=True,  # 是否显示当前值
             value_format="{:.0f}%",  # 值显示格式
-            offset=(0, login_ui_rect.height - 60)  # 位置偏移量
+            offset=(0, login_ui_rect.height - 60),  # 位置偏移量
+            parent_id=login_ui_params.get("name")
         )
         self.custom_toggle = GameCheckBox(
             self.gm.game_win,  # 渲染表面
@@ -245,14 +246,39 @@ class GameLogin(SpriteBase):
             bg_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface((0, 0, 28, 28)),
             bg_check_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface(
                 (56, 0, 28, 28)),
-            offset=(0, login_ui_rect.height - 30)
+            offset=(0, login_ui_rect.height - 30),
+            parent_id=login_ui_params.get("name")
         )
+
         self.__components.append(self.user_name)
         self.__components.append(self.user_pwd)
         self.__components.append(self.enter_game)
         self.__components.append(self.enter_game_offline)
         self.__components.append(self.music_slider)
         self.__components.append(self.custom_toggle)
+
+        # 2. 定义差异化配置 (文字, 垂直偏移量, 回调函数)
+        btn_configs = [
+            ("system_setting", "系统设置", self._show_setting_ui),
+            ("game_website", "游戏官网", lambda: webbrowser.open("www.sjdlzfs.com")),
+            ("game_exit", "退出游戏", lambda: (pygame.quit(), sys.exit())),  # 注意退出逻辑需根据实际框架调整
+            ("game_create_acc", "创建账号", None)
+        ]
+
+        right_x = self.gm.game_win.get_rect().right - 90
+        bottom_y = self.gm.game_win.get_rect().bottom
+        _start_y = 150
+
+        # 3. 循环批量创建
+        for attr_name, text, callback in btn_configs:
+            rect = pygame.Rect(right_x, bottom_y - _start_y, 60, 25)
+            # 创建按钮对象
+            button = GameButton(self.gm.game_win, rect, text, **common_props)
+            # 存入组件列表
+            if callback:
+                button.set_on_click(callback)
+            self.__components.append(button)
+            _start_y -= 32
 
         game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
@@ -274,6 +300,7 @@ class GameLogin(SpriteBase):
                 GameDialogBoxManager.dialog("账号密码不能为空")
                 return
             login = LoginServer("http://169.254.249.130:8089/")
+
             # login = LoginServer()
 
             def _on_login_success(data: dict):
@@ -288,7 +315,7 @@ class GameLogin(SpriteBase):
 
                 # 实例化服务器连接
                 # w_server = GameWorldServer(self.gm.get("主角"),self.gm,"http://llzfs.online:8089/")
-                w_server = GameWorldServer(self.gm.get("主角"), self.gm,"http://169.254.249.130:8089/")
+                w_server = GameWorldServer(self.gm.get("主角"), self.gm, "http://169.254.249.130:8089/")
                 ser_sta = w_server.connect_sync(GameMapManager.map_id)
                 if not ser_sta:
                     raise Exception("服务器连接失败")
@@ -381,7 +408,7 @@ class GameLogin(SpriteBase):
 
         # 转换图像格式
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2)))
+        pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2))).convert()
         return pygame.transform.scale(
             pygame_surface,
             (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
@@ -418,18 +445,30 @@ class GameLogin(SpriteBase):
             self.current_frame_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
             self.load_progress = self.current_frame_pos / self.total_frames
 
+    # def _convert_frame(self, frame):
+    #     """
+    #     转换OpenCV帧为Pygame Surface
+    #     :param frame:
+    #     :return:
+    #     """
+    #     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #     pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2)))
+    #     return pygame.transform.scale(
+    #         pygame_surface,
+    #         (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
+    #     )
+
     def _convert_frame(self, frame):
-        """
-        转换OpenCV帧为Pygame Surface
-        :param frame:
-        :return:
-        """
+        # 1. 缩小 OpenCV 原始帧的大小（在转换为 Surface 前缩放效率更高）
+        frame = cv2.resize(frame, (self.gm.game_win_rect.width, self.gm.game_win_rect.height))
+        # 2. 转换颜色空间
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2)))
-        return pygame.transform.scale(
-            pygame_surface,
-            (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
-        )
+        # 3. 交换维度并创建 Surface
+        # 注意：使用 swapaxes 通常比 np.transpose 在某些版本上更快
+        # return pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+
+        surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        return surface.convert()  # 这一步至关重要
 
     def render(self):
         """渲染当前帧"""
@@ -510,8 +549,7 @@ class GameLogin(SpriteBase):
 
         # 清理所有组件
         for component in self.__components:
-            if hasattr(component, 'destroy'):
-                component.destroy()
+            component.destroy()
         self.__components.clear()
 
         if clear_bg:
@@ -532,4 +570,19 @@ class GameLogin(SpriteBase):
         :return:
         """
         for _com in self.__components:
-            _com.update_pos(rect.x, rect.y)
+            if _com.parent_id:
+                _com.update_pos(rect.x, rect.y)
+
+    def _show_setting_ui(self):
+        self.gm.game_dialog.show_dialog(SourceManager.cfg_ui_path + "/game_setting.html",
+                                        render_x=0,
+                                        render_y=0,
+                                        overwrite_path=True,
+                                        dialog_event_dict={
+                                            "confirm": self._set_confirm,
+                                            "cancel": lambda: (GameToastManager.add_message(f"取消"),
+                                                               self.gm.game_dialog.close_dialog()),
+                                        })
+
+    def _set_confirm(self):
+        GameToastManager.add_message(f"确认"+str(self.gm.game_dialog.get_val("price11")))

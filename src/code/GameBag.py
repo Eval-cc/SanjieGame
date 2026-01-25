@@ -156,7 +156,7 @@ class GameBag:
 
         # 道具锁定框
         self.item_lock = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
-                                                    [20, 20])
+                                                      [20, 20])
         # 道具描述UI的道具图片背景
         self.icon_item_bg = SourceManager.ssurface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/icon_skill_bg.png"), [60, 60])
@@ -252,7 +252,7 @@ class GameBag:
             if target_page != -1:
                 page, x, y = index_k.split("#")
                 if target_x != -1:
-                    x = max(target_x,0)
+                    x = max(target_x, 0)
                 if target_y != -1:
                     y = max(target_y, 0)
                 page = max(target_page, 0)
@@ -636,7 +636,7 @@ class GameBag:
         target_item.count += difference_count
         return True
 
-    def mouse_down(self):
+    def mouse_down(self, **args):
         check_bag = self.__check_bag()
         if check_bag[0]:
             if check_bag[1]:

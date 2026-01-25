@@ -26,7 +26,7 @@ class GameButton(SpriteBase,GameComponentBase):
                  border_color: str = "#000000", border_width: int = 1,
                  hover_color: str = "#DDDDDD", press_color: str = "#AAAAAA",
                  bg_image: Optional[str] = None, bg_press_image: Optional[str] = None,
-                 offset: Tuple[int, int] = (0, 0)):
+                 offset: Tuple[int, int] = (0, 0), parent_id:str = None):
         """
         初始化按钮组件
         :param render_surface: 渲染目标表面
@@ -40,6 +40,7 @@ class GameButton(SpriteBase,GameComponentBase):
         :param hover_color: 鼠标悬停时的背景色
         :param press_color: 鼠标按下时的背景色
         :param bg_image: 背景图片路径（可选）
+        :param parent_id: 父组件ID
         """
         super().__init__([["按钮点击事件"], [1]])
         self.rect = rect
@@ -75,6 +76,7 @@ class GameButton(SpriteBase,GameComponentBase):
         self.need_redraw = True
         # 是否启用
         self.enable = True
+        self.parent_id = parent_id
 
     def __str__(self):
         return self.text
@@ -134,7 +136,7 @@ class GameButton(SpriteBase,GameComponentBase):
         """
         if not self.need_redraw:
             self.render_surface.blit(self.cached_surface, self.rect)
-            return
+            return self.cached_surface
 
         # 清空缓存表面
         self.cached_surface.fill((0, 0, 0, 0))
@@ -185,6 +187,7 @@ class GameButton(SpriteBase,GameComponentBase):
         # 渲染到目标表面
         self.render_surface.blit(self.cached_surface, self.rect)
         self.need_redraw = False
+        return self.cached_surface
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标按下事件"""
@@ -221,19 +224,3 @@ class GameButton(SpriteBase,GameComponentBase):
     def set_on_click(self, callback: Callable):
         """设置点击回调函数"""
         self.on_click = callback
-
-    def update(self):
-        """更新按钮状态"""
-        if self.need_redraw:
-            self.render()
-
-    def update_pos(self, x: int, y: int):
-        """
-        更新组件位置,
-        :param x:
-        :param y:
-        :return:
-        """
-        self.rect.x = self.offset[0] + x
-        self.rect.y = self.offset[1] + y
-        self.need_redraw = True
