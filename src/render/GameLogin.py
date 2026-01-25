@@ -283,6 +283,7 @@ class GameLogin(SpriteBase):
         game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
         def __entrance_game(acc_name, data):
+            self.gm.game_dialog.close_dialog()
             # 先把角色挂载上
             self.gm.add("主角", Player(acc_name, data))
             GameMapManager.change_map(data.get("scene_id"))

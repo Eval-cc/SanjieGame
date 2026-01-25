@@ -22,6 +22,20 @@ B站地址:
 
 ---
 
+
+## 使用须知
+## 环境安装指南
+本开发环境基于 Python 3.12。请确保在运行前安装必要的依赖库。
+
+### 安装步骤：
+1. 创建虚拟环境：`python -m venv .venv`
+2. 激活虚拟环境：
+   - Windows: `.venv\Scripts\activate`
+   - Linux/Mac: `source .venv/bin/activate`
+3. **安装依赖（关键）：**
+   ```bash
+   pip install -r requirements.txt
+
 ## ✨ 特色功能
 
 ---
