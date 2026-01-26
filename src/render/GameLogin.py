@@ -136,7 +136,7 @@ class GameLogin(SpriteBase):
             self.video_ready = False
             self.playing = False
 
-    def _load_login_ui(self):
+    def _load_login_ui(self, **args):
         """
         加载UI 比如选区 和输入账号
         :return:
@@ -167,7 +167,7 @@ class GameLogin(SpriteBase):
                                                                          "drag": True,
                                                                          "drag_rect": ["auto", "auto", "-25px", 30],
                                                                          "move_callback": self.login_ui_move,
-                                                                         "mouse_move": lambda: True,
+                                                                         "mouse_move": lambda **args: True,
                                                                          "show": True,
                                                                          "bubble": True
                                                                      }, sort=True)
@@ -349,6 +349,7 @@ class GameLogin(SpriteBase):
             def run_async():
                 # 清理所有组件
                 self.cleanup(False)
+                # 可以尝试用sqlite或者其他的什么技术进行离线数据的存储
                 __entrance_game("eval", {
                     "avatar": "105进阶幽莹娃娃",
                     "name": "Eval",
@@ -575,6 +576,10 @@ class GameLogin(SpriteBase):
                 _com.update_pos(rect.x, rect.y)
 
     def _show_setting_ui(self):
+        if self.gm.game_dialog.visible():
+            self.gm.game_dialog.close_dialog()
+            return
+
         self.gm.game_dialog.show_dialog(SourceManager.cfg_ui_path + "/game_setting.html",
                                         render_x=0,
                                         render_y=0,
@@ -586,4 +591,4 @@ class GameLogin(SpriteBase):
                                         })
 
     def _set_confirm(self):
-        GameToastManager.add_message(f"确认"+str(self.gm.game_dialog.get_val("price11")))
+        GameToastManager.add_message(f"确认" + str(self.gm.game_dialog.get_val("price11")))

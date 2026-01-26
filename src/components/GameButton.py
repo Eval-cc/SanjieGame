@@ -77,6 +77,7 @@ class GameButton(SpriteBase,GameComponentBase):
         # 是否启用
         self.enable = True
         self.parent_id = parent_id
+        self.type = "button"
 
     def __str__(self):
         return self.text

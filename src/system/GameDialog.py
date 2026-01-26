@@ -15,8 +15,10 @@ from typing import TYPE_CHECKING, Dict, Any
 import pygame
 
 from src.components.GameButton import GameButton
+from src.components.GameCheckBox import GameCheckBox
 from src.components.GameComponentBase import GameComponentBase
 from src.components.GameInput import GameInput
+from src.components.GameSlider import GameSlider
 from src.lib.GameEnum import ShopType
 from src.manager.GameLogManger import GameLogManager
 from uuid import uuid4
@@ -146,7 +148,7 @@ class GameDialog:
                                                           "name": "对话UI",
                                                           "mouse_down": self.mouse_down,
                                                           "mouse_up": self.mouse_up,
-                                                          # "mouse_move": self.mouse_move,
+                                                          "mouse_move": self.mouse_move,
                                                           # "mouse_out": self.mouse_out,
                                                           # "mouse_double_click": self.mouse_double_click,
                                                           "update_event": self.render,
@@ -231,7 +233,7 @@ class GameDialog:
                 elif node.get('tag') == "button":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_down"):
-                        if _com.mouse_down(event): # 返回True 表示有问题. 不让执行,可能被禁用了
+                        if _com.mouse_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                             return
                     else:
                         GameMusicManager.play_sound("mbutton")
@@ -251,7 +253,7 @@ class GameDialog:
                     self.__focus_node = node
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_down"):
-                        if _com.mouse_down(event): # 返回True 表示有问题. 不让执行,可能被禁用了
+                        if _com.mouse_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                             return
                         return
                     node["attrs"]["focus"] = True
@@ -272,28 +274,76 @@ class GameDialog:
                     self.__ui_cache_dict[group_id] = target_id  # 更新选中的标签
                     self.update_blit = True  # 触发重绘
                     return
+                elif node.get('tag') == "slider":
+                    _com = self._alone_component.get(node.get("target"))
+                    if _com and hasattr(_com, "mouse_down"):
+                        event["mouse_pos"] = (
+                            event["mouse_pos"][0] - bag_sprite.get("rect").x,
+                            event["mouse_pos"][1] -bag_sprite.get("rect").y
+                        )
+                        _com.mouse_down(event)
+                    return
+
+                elif node.get('tag') == "checkbox":
+                    _com = self._alone_component.get(node.get("target"))
+                    if _com and hasattr(_com, "mouse_down"):
+                        if _com.mouse_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
+                            return
+                    self.update_blit = True
+                    return
                 GameLogManager.log_service_debug(f"点击:{node.get('tag')}")
                 # self.update_blit = True
                 return
 
-    def mouse_up(self):
+    def mouse_up(self, **args):
+        event = args.get("event")
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
         bag_sprite = game_ui.get_surface_sprite("对话UI")  # 需要加上UI的偏移
+
+        # 松开的时候把控件的抬起事件触发一下. 避免鼠标离开区域之后 又回来 没有按下鼠标也出发拖拽事件
+        for _com in self._alone_component.values():
+            if _com and _com.type == "slider" and hasattr(_com, "mouse_up"):
+                _com.mouse_up(event)
+
         for [node, gui_rect] in self.__GUI_rect_list:
             if gui_rect.collidepoint(mouse_pos[0] - bag_sprite.get("rect").x, mouse_pos[1] - bag_sprite.get("rect").y):
                 if node.get('tag') == "button":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_up"):
-                        if _com.mouse_up(None): # 返回True 表示有问题. 不让执行,可能被禁用了
+                        if _com.mouse_up(None):  # 返回True 表示有问题. 不让执行,可能被禁用了
                             return
                     self.update_blit = True
+                    return
+
+                elif node.get('tag') == "slider":
+                    _com = self._alone_component.get(node.get("target"))
+                    if _com and hasattr(_com, "mouse_up"):
+                        _com.mouse_up(event)
                     return
                 return
 
     #
-    # def mouse_move(self):
-    #     pass
+    def mouse_move(self, **args):
+        event = args.get("event")
+        mouse_pos = pygame.mouse.get_pos()
+        game_ui: GameUI = self.gm.get("游戏UI")
+        bag_sprite = game_ui.get_surface_sprite("对话UI")  # 需要加上UI的偏移
+        for [node, gui_rect] in self.__GUI_rect_list:
+            if gui_rect.collidepoint(mouse_pos[0] - bag_sprite.get("rect").x, mouse_pos[1] - bag_sprite.get("rect").y):
+                if node.get('tag') == "slider":
+                    _com = self._alone_component.get(node.get("target"))
+                    if _com and hasattr(_com, "mouse_move"):
+                        event["mouse_pos"] = (
+                            event["mouse_pos"][0] - bag_sprite.get("rect").x,
+                            event["mouse_pos"][1] -bag_sprite.get("rect").y
+                        )
+                        if _com.mouse_move(event):
+                            return
+                        self.update_blit = True
+                    return
+                return
+
     #
     # def mouse_out(self):
     #     pass
@@ -507,7 +557,7 @@ class GameDialog:
         attrs = node.get("attrs", {})
         dom_id = attrs.get("id")
         tag = node.get("tag")
-        node_text = node.get("text", "")
+        node_text = node.get("text") or attrs.get("label") or ""
         children = node.get("children", [])
         view_height = self.__render_offset[1]  # 可视区域
 
@@ -601,7 +651,7 @@ class GameDialog:
             return 0, 0
 
         _biw, _bih = 0, 0
-        if tag not in ["tabs", "tab-item", "row", "input", "button"]:
+        if tag not in ["tabs", "tab-item", "row", "input", "button","checkbox"]:
             # 渲染bg
             _biw, _bih = __render_bg_img()
 
@@ -870,7 +920,8 @@ class GameDialog:
                 is_password = attrs.get("type", "text") == "password"
                 exist_com = GameInput(pygame.Surface((input_width, input_height), pygame.SRCALPHA),
                                       pygame.Rect([render_x, render_y, input_width, input_height]),
-                                      placeholder=attrs.get("placeholder", ""), is_password=is_password, bg_color="#000000",
+                                      placeholder=attrs.get("placeholder", ""), is_password=is_password,
+                                      bg_color="#000000",
                                       text_color="#FFFFFF", parent_id=dom_id, field=field, border_color=border_color)
                 self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
                 self._alone_component[dom_id] = exist_com
@@ -1150,8 +1201,7 @@ class GameDialog:
                 txt_rect.center = btn_rect.center
 
                 # 绘制文本
-                dialog_sur.blit(txt_surf, txt_rect)
-                # --- 居中逻辑结束 ---
+                self.blit_with_clipping(dialog_sur, txt_surf, txt_rect.x, txt_rect.y, view_height)
 
                 # 4. 递增横坐标 (建议根据实际宽度 i_w 递增，或保持固定间距)
                 head_x += (i_w + 5)
@@ -1162,6 +1212,137 @@ class GameDialog:
             for child in children:
                 if child.get("attrs", {}).get("id") == active_id:
                     render_y = self.create_node(dialog_sur, child, render_x, render_y, curr_style)
+
+        elif tag == "slider":
+            # 避免循环new
+            exist_com = self._alone_component.get(dom_id)
+            if exist_com is None:
+                com_width = int(attrs.get("width", 150))
+                com_height = int(attrs.get("height", 30))
+                slider_width = int(attrs.get("slider-width", 20))
+                slider_height = int(attrs.get("slider-height", 30))
+                border_width = int(attrs.get("border-width", 1))
+                bg_color = attrs.get("background-color", "#CCCCCC")
+                slider_color = attrs.get("slider-color", "#666666")
+                slider_active_color = attrs.get("slider-active-color", "#333333")
+                border_color = attrs.get("border-color", "#000000")
+                color = attrs.get("color", "#FFFFFF")
+                # 创建滑块实例
+                exist_com = GameSlider(
+                    pygame.Surface((com_width, com_height), pygame.SRCALPHA),
+                    pygame.Rect(render_x, render_y, com_width, com_height),  # 位置和大小
+                    min_value=0,  # 最小值
+                    max_value=100,  # 最大值
+                    initial_value=round(GameMusicManager.bgm_volume * 100),  # 初始值
+                    bg_color=bg_color,  # 轨道背景颜色
+                    slider_color=slider_color,  # 滑块颜色
+                    active_slider_color=slider_active_color,  # 滑块激活时的颜色
+                    border_color=border_color,  # 边框颜色
+                    value_color=color,
+                    border_width=border_width,  # 边框宽度
+                    slider_width=slider_width,  # 滑块宽度
+                    slider_height=slider_height,  # 滑块高度
+                    show_value=True,  # 是否显示当前值
+                    value_format="{:.0f}%",  # 值显示格式
+                    parent_id=dom_id
+                )
+                self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
+                self._alone_component[dom_id] = exist_com
+                render_y += exist_com.rect.height
+            else:
+                exist_com.update_pos(render_x, render_y)
+                self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
+                render_y += exist_com.rect.height
+            render_y += 5
+            self.__GUI_rect_list.append([{"tag": tag, "target": dom_id, "attrs": attrs}, exist_com.rect])
+
+        elif tag == "checkbox":
+            if node_text == "" or node is None:
+                node_text = ""
+            _com_id = node_text if dom_id is None else dom_id
+            # 避免循环new
+            exist_com = self._alone_component.get(_com_id)
+
+            com_width = int(attrs.get("width", 120))
+            com_height = int(attrs.get("height", 30))
+
+            text_surface = self.__ui_cache_dict.get(f"ui_btn-text_{node_text}")
+            if text_surface is None:
+                text_surface = self.gm.game_font.get_text_surface_line(
+                    str(node_text),
+                    True,
+                    curr_style["font-size"],
+                    curr_style["color"]
+                )
+                self.__ui_cache_dict[f"ui_btn-text_{node_text}"] = text_surface
+
+            if exist_com is None:
+                border_width = int(attrs.get("border-width", 1))
+                bg_color = attrs.get("background-color", "#FFFFFF")
+                check_color = attrs.get("check-color", "#0000FF")
+                hover_color = attrs.get("hover-color", "#333333")
+                border_color = attrs.get("border-color", "#FFFF00")
+                color = attrs.get("color", "#FF0000")
+
+                bg_image = attrs.get("background-image")
+                bg_check_image = attrs.get("background-image-check")
+                bg_image_clip = attrs.get("background-image-clip")
+                bg_check_image_clip = attrs.get("background-image-check-clip")
+
+                if bg_image:
+                    if bg_image.startswith("#ROOT_S"):
+                        bg_image = bg_image.replace("#ROOT_S", SourceManager.ui_system_path)
+                        if bg_image_clip:
+                            bg_image_clip = tuple(int(i) for i in bg_image_clip.split(","))
+                            if len(bg_image_clip) == 4:
+                                bg_image = SourceManager.load(bg_image).subsurface(bg_image_clip)
+                            else:
+                                bg_image = None
+                        else:
+                            bg_image = SourceManager.load(bg_image)
+                    else:
+                        bg_image = None
+
+                if bg_check_image:
+                    if bg_check_image.startswith("#ROOT_S"):
+                        bg_check_image = bg_check_image.replace("#ROOT_S", SourceManager.ui_system_path)
+                        if bg_check_image_clip:
+                            bg_check_image_clip = tuple(int(i) for i in bg_check_image_clip.split(","))
+                            if len(bg_check_image_clip) == 4:
+                                bg_check_image = SourceManager.load(bg_check_image).subsurface(bg_check_image_clip)
+                        else:
+                            bg_check_image = SourceManager.load(bg_check_image)
+
+                exist_com = GameCheckBox(
+                    pygame.Surface((com_width, com_height), pygame.SRCALPHA),
+                    pygame.Rect(render_x, render_y, com_width, com_height),
+                    text=str(node_text),
+                    is_checked=True,
+                    is_radio=True,
+                    font_size=12,
+                    text_color=color,  # 红色文本
+                    bg_color=bg_color,  # 白色背景
+                    border_color=border_color,  # 绿色边框
+                    check_color=check_color,  # 蓝色选中标记
+                    hover_color=hover_color,  # 黄色悬停背景
+                    border_width=2,
+                    check_width=3,
+                    bg_image=bg_image,
+                    bg_check_image=bg_check_image,
+                    parent_id=dom_id
+                )
+                self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
+                self._alone_component[_com_id] = exist_com
+                render_y += exist_com.rect.height + 5
+
+            else:
+                exist_com.update_pos(render_x, render_y)
+                self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
+                render_y += exist_com.rect.height
+
+            render_y += 5
+            self.__GUI_rect_list.append([{"tag": tag, "target": _com_id, "attrs": attrs}, exist_com.rect])
+
         else:
             for child in children:
                 render_y = self.create_node(dialog_sur, child, render_x, render_y, curr_style,
@@ -1263,6 +1444,7 @@ class GameDialog:
         self._alone_component.clear()  # 清空组件
         game_ui: GameUI = self.gm.get("游戏UI")
         game_ui.close_surface_ui("对话UI")
+        self.__cached_result = None
         # if self.dialog_callback:
         #     self.dialog_callback({"__type": "close"})
 
@@ -1291,3 +1473,10 @@ class GameDialog:
             return None
 
         return _find(self.__cached_result)
+
+    def visible(self):
+        """
+        当前开窗是否可见
+        :return:
+        """
+        return self.__cached_result is not None

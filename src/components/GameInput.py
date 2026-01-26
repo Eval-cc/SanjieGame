@@ -56,6 +56,7 @@ class GameInput(SpriteBase, GameComponentBase):
         self._raw_field_text = field
         self.field_surface = None
         self.parent_id = parent_id
+        self.type = "input"
 
         self._field_rect = self.rect.copy()
         if len(field) > 0:

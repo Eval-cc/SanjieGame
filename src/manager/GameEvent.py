@@ -22,6 +22,7 @@ from src.manager.GameManager import GameManager
 if TYPE_CHECKING:
     from src.render.GameUI import GameUI
     from src.components.GameInput import GameInput
+    from pygame.event import Event
 
 keyword_dict = {
     6: "key_down",
@@ -59,7 +60,7 @@ class GameEvent:
     __first_sprite_click: dict = {}
 
     # 保存上次按下的事件,用于触发长按
-    __first_keyboard_event: pygame.Event = None
+    __first_keyboard_event: pygame.event.Event = None
 
     __input_pool: list["GameInput"] = []
 

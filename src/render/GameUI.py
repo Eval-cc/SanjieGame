@@ -316,7 +316,7 @@ class GameUI(SpriteBase):
             if self.__click_surface.get("frame"):
                 self.__click_surface.get("frame")["index"] = 0
             if up_fun:
-                up_fun()
+                up_fun(event=event)
         if self.__hover_surface is None:
             return True
         # 每次松开前都需要更新一下当前ui的可拖拽坐标
@@ -337,7 +337,7 @@ class GameUI(SpriteBase):
             move_fun = target.get("mouse_move")
             if not move_fun:
                 return False
-            return move_fun()
+            return move_fun(event=event)
         return True
 
     def mouse_enter(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):

@@ -72,6 +72,7 @@ class GameSlider(SpriteBase, GameComponentBase):
         self.value_format = value_format
         self.render_surface = render_surface
         self.offset = offset
+        self.type = "slider"
 
         if bg_slider_image:
             # 未选中的状态
@@ -184,7 +185,10 @@ class GameSlider(SpriteBase, GameComponentBase):
             self.cached_surface.blit(text_surface, text_rect)
 
         # 渲染到目标表面
-        self.render_surface.blit(self.cached_surface, self.rect)
+        dest = self.rect
+        if self.render_surface.get_size() == self.rect.size:
+            dest = (0, 0)
+        self.render_surface.blit(self.cached_surface, dest)
         self.need_redraw = False
 
         return self.cached_surface

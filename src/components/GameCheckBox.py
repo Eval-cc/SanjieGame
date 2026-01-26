@@ -73,6 +73,7 @@ class GameCheckBox(SpriteBase, GameComponentBase):
 
         self.bg_image = None
         self.parent_id = parent_id
+        self.type = "checkbox"
 
         if bg_image:
             # 未选中的状态

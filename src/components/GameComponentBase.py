@@ -20,6 +20,7 @@ class GameComponentBase:
         self.offset: Tuple[int, int] = None
         self.need_redraw = True
         self.parent_id = None
+        self.type = "GameComponentBase"
 
     def render(self):
         pass
