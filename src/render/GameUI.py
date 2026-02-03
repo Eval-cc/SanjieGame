@@ -98,15 +98,53 @@ class GameUI(SpriteBase):
                 path)
 
         sur_rect = ui_surface.get_rect()
+        # if loc is not None:
+        #     if loc == "middle":
+        #         sur_rect.x = int(self.gm.game_win_rect.width / 2) - int(sur_rect.width / 2)
+        #         sur_rect.y = int(self.gm.game_win_rect.height / 2) - int(sur_rect.height / 2)
+        #     elif loc == "top_right":
+        #         sur_rect.x = self.gm.game_win_rect.right - sur_rect.width
+        #     elif loc == "top_right_center":
+        #         sur_rect.x = self.gm.game_win_rect.right - sur_rect.width
+        #         sur_rect.y = int(self.gm.game_win_rect.height / 2) - int(sur_rect.height / 2)
+
         if loc is not None:
+            # 定义窗口的中心点和便捷变量
+            win_w = self.gm.game_win_rect.width
+            win_h = self.gm.game_win_rect.height
+            win_right = self.gm.game_win_rect.right
+            win_bottom = self.gm.game_win_rect.bottom
+
+            # 常用偏移量：居中时的起始坐标
+            center_x = int(win_w / 2) - int(sur_rect.width / 2)
+            center_y = int(win_h / 2) - int(sur_rect.height / 2)
+
             if loc == "middle":
-                sur_rect.x = int(self.gm.game_win_rect.width / 2) - int(sur_rect.width / 2)
-                sur_rect.y = int(self.gm.game_win_rect.height / 2) - int(sur_rect.height / 2)
+                sur_rect.x, sur_rect.y = center_x, center_y
+
+            elif loc == "top_left":
+                sur_rect.x, sur_rect.y = 0, 0
+
+            elif loc == "top_center":
+                sur_rect.x, sur_rect.y = center_x, 0
+
             elif loc == "top_right":
-                sur_rect.x = self.gm.game_win_rect.right - sur_rect.width
-            elif loc == "top_right_center":
-                sur_rect.x = self.gm.game_win_rect.right - sur_rect.width
-                sur_rect.y = int(self.gm.game_win_rect.height / 2) - int(sur_rect.height / 2)
+                sur_rect.x, sur_rect.y = win_right - sur_rect.width, 0
+
+            elif loc == "left_center":
+                sur_rect.x, sur_rect.y = 0, center_y
+
+            elif loc == "right_center":  # 即你代码里的 top_right_center
+                sur_rect.x, sur_rect.y = win_right - sur_rect.width, center_y
+
+            elif loc == "bottom_left":
+                sur_rect.x, sur_rect.y = 0, win_bottom - sur_rect.height
+
+            elif loc == "bottom_center":
+                sur_rect.x, sur_rect.y = center_x, win_bottom - sur_rect.height
+
+            elif loc == "bottom_right":
+                sur_rect.x, sur_rect.y = win_right - sur_rect.width, win_bottom - sur_rect.height
         elif pos is not None:
             sur_rect.x = pos[0]
             sur_rect.y = pos[1]

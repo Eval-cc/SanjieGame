@@ -128,6 +128,11 @@ class GameCheckBox(SpriteBase, GameComponentBase):
             if self.on_toggle:
                 self.on_toggle(self._is_checked)
 
+    @property
+    def value(self) -> bool:
+        """获取当前值"""
+        return self._is_checked
+
     def set_rect(self, rect: pygame.Rect):
         """设置组件位置和大小"""
         self.rect = rect

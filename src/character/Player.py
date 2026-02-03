@@ -217,12 +217,15 @@ class Player(SpriteBase):
             # 给主角挂上背包
             self.bag = GameBag(GameManager)
 
-            _item_arr = data.get("items", "").split("|")
-            for __ii in _item_arr:
-                # 格式  page, x, y, id, 数量
-                _item = [int(i) for i in __ii.split(",")]
-                self.bag.add_item(str(_item[3]), _item[4], target_page=_item[0], target_x=_item[1],
-                                  target_y=_item[2])
+            # 这里可先不添加, 点击背包显示的时候再加
+            # if len(data.get("items", "")) > 0:
+            #     self.bag.refresh_bag(data.get("items"))
+            # _item_arr = [ii for ii in data.get("items", "").split("|") if ii]
+            # for __ii in _item_arr:
+            #     # 格式  page, x, y, id, 数量
+            #     _item = [int(i) for i in __ii.split(",")]
+            #     self.bag.add_item(str(_item[3]), _item[4], target_page=_item[0], target_x=_item[1],
+            #                       target_y=_item[2])
 
             self.name = data.get("name")
             self.current_path_index = 0  # 当前路径索引
@@ -615,7 +618,7 @@ class Player(SpriteBase):
             GameLogManager.log_service_debug("点击角色技能")
             return
 
-    def __click_map(self):
+    def __click_map(self, **args):
         """点击小地图"""
         print("点击小地图")
 
@@ -718,6 +721,17 @@ class Player(SpriteBase):
                 game_ui.change_ui_layer("角色属性")
                 return
             case "背包":
+                # 唤出背包的时候才需要读取背包数据
+                if not game_ui.get_surface_show("角色背包"):
+                    w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+                    # 有服务器.那么就通知服务器获取背包数据
+                    if w_server:
+                        pass
+                    else:
+                        # 从数据库获取到背包数据
+                        items = GameManager.game_local_db.fetch_on("SELECT items from fso WHERE account_id = (SELECT ID FROM accounts WHERE username = ?)", (self.acc_name,))
+                        if items:
+                            self.bag.refresh_bag(items.get("items"))
                 game_ui.change_ui_layer("角色背包")
                 return
             case "退出":

@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 class GameDialog:
-    def __init__(self, gm):
+    def __init__(self, gm, win_key="游戏UI"):
         # 基础属性
         self.rect = None
         self.gm: GameManager = gm
@@ -59,6 +59,7 @@ class GameDialog:
         self.__has_scroll_wheel = False  # 是否通过滚轮触发的重绘
 
         self.dialog_title: pygame.Surface = None
+        self.has_close = False  # 窗口是否显示关闭按钮- 默认false
 
         # 缓存一个不可变的UI, 比如p标签和 a标签, 没必要每次都要不断的生成
         self.__ui_cache_dict = {}
@@ -70,8 +71,11 @@ class GameDialog:
         # 存放单独的控件
         self._alone_component: dict[str, GameComponentBase] = {}
 
+        self.dialog_key = win_key
+
     def show_dialog(self, dialog_path: str, npc=None, render_x: int = 5, render_y: int = -1, dialog_callback=None,
-                    overwrite_path: bool = False, dialog_event_dict: dict[str, Any] = None):
+                    overwrite_path: bool = False, dialog_event_dict: dict[str, Any] = None, loc: str = "middle"):
+
         """调用NPC对话"""
         self.__scroll_y = 0
         self.__cached_result = None
@@ -100,6 +104,8 @@ class GameDialog:
                 GameLogManager.log_service_debug(f"非法的对话文件")
                 return
             width, height = result.get('attrs').get("width"), result.get('attrs').get("height")
+            # 此属性控制是否再标题栏显示关闭按钮
+            has_close = result.get('close', "false") == "true"
             if bool(width) ^ bool(height):
                 GameToastManager.add_message(f"非法的对话文件")
                 GameLogManager.log_service_debug(f"非法的对话文件")
@@ -108,7 +114,7 @@ class GameDialog:
             self.dialog_callback = dialog_callback
 
             game_ui: GameUI = self.gm.get("游戏UI")
-            dialog_sur: pygame.Surface = game_ui.get_surface_ui("对话UI")
+            dialog_sur: pygame.Surface = game_ui.get_surface_ui(self.dialog_key)
 
             if self.dialog_title is None or self.dialog_title.width != int(width):
                 self.dialog_title = SourceManager.ssurface_scale(
@@ -132,7 +138,7 @@ class GameDialog:
                     [240, 20],
                     options=
                     {
-                        "name": "对话UI_按钮",
+                        "name": f"{self.dialog_key}_按钮",
                         "frame": {
                             "size": 60,
                             "count": 2,
@@ -143,9 +149,9 @@ class GameDialog:
 
                 [_, rect, _] = game_ui.load_system_ui(dialog_sur,
                                                       [int(width), int(height)],
-                                                      "middle",
+                                                      loc,
                                                       {
-                                                          "name": "对话UI",
+                                                          "name": self.dialog_key,
                                                           "mouse_down": self.mouse_down,
                                                           "mouse_up": self.mouse_up,
                                                           "mouse_move": self.mouse_move,
@@ -189,17 +195,17 @@ class GameDialog:
             self.__render_full_height = actual_render_end
             self.__scroll_max = max(0, self.__render_full_height - dialog_sur.get_height() + 20)
 
-            game_ui.set_surface_ui("对话UI", dialog_sur)
+            game_ui.set_surface_ui(self.dialog_key, dialog_sur)
             if self.__scroll_max > 0:
                 scrollbar_x = dialog_sur.get_width() - 8
                 scrollbar_height = max(20, (visible_height / (self.__render_full_height + 1)) * visible_height)
                 scrollbar_y = int((self.__scroll_y / self.__scroll_max) * (visible_height - scrollbar_height))
                 pygame.draw.rect(dialog_sur, (100, 100, 100), (scrollbar_x, 30 + scrollbar_y, 6, scrollbar_height))
 
-            if game_ui.get_surface_show("对话UI"):
+            if game_ui.get_surface_show(self.dialog_key):
                 return
 
-            game_ui.change_ui_layer("对话UI", center=True)
+            game_ui.change_ui_layer(self.dialog_key, center=True)
             self.update_blit = True  # 触发页面重绘
 
     def mouse_down(self, **args):
@@ -207,17 +213,20 @@ class GameDialog:
         event = args.get("event")
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
-        bag_sprite = game_ui.get_surface_sprite("对话UI")  # 需要加上UI的偏移
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
 
         # 小于拖拽区域高度的只能是关闭按钮了
-        if mouse_pos[1] <= int(bag_sprite.get("rect").y) + int(bag_sprite.get("drag_rect")[3]):
-            x_offset = int(bag_sprite.get("drag_rect")[2]) - bag_sprite.get("rect").width
-            if mouse_pos[0] > int(bag_sprite.get("rect").x) + int(bag_sprite.get("rect").width) + x_offset:
+        if mouse_pos[1] <= int(win_sprite.get("rect").y) + int(win_sprite.get("drag_rect")[3]):
+            x_offset = int(win_sprite.get("drag_rect")[2]) - win_sprite.get("rect").width
+            if mouse_pos[0] > int(win_sprite.get("rect").x) + int(win_sprite.get("rect").width) + x_offset:
+                if not self.has_close:
+                    # 没有关闭按钮. 不允许关闭
+                    return
                 self.close_dialog()
                 return
 
         for [node, gui_rect] in self.__GUI_rect_list:
-            if gui_rect.collidepoint(mouse_pos[0] - bag_sprite.get("rect").x, mouse_pos[1] - bag_sprite.get("rect").y):
+            if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
                 if self.dialog_callback:
                     self.dialog_callback(node)
                     return
@@ -259,8 +268,8 @@ class GameDialog:
                     node["attrs"]["focus"] = True
                     # 设置候选框的位置
                     inp_offset = [
-                        bag_sprite.get("rect").x + gui_rect.x,
-                        bag_sprite.get("rect").y + gui_rect.y + gui_rect.height,
+                        win_sprite.get("rect").x + gui_rect.x,
+                        win_sprite.get("rect").y + gui_rect.y + gui_rect.height,
                         200,
                         50
                     ]
@@ -278,8 +287,8 @@ class GameDialog:
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_down"):
                         event["mouse_pos"] = (
-                            event["mouse_pos"][0] - bag_sprite.get("rect").x,
-                            event["mouse_pos"][1] -bag_sprite.get("rect").y
+                            event["mouse_pos"][0] - win_sprite.get("rect").x,
+                            event["mouse_pos"][1] - win_sprite.get("rect").y
                         )
                         _com.mouse_down(event)
                     return
@@ -289,6 +298,10 @@ class GameDialog:
                     if _com and hasattr(_com, "mouse_down"):
                         if _com.mouse_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                             return
+                        # 触发变化事件
+                        _be = node.get("attrs").get("@change")
+                        if _be and self.dialog_event_dict.get(_be):
+                            self.dialog_event_dict[_be](_com.value)
                     self.update_blit = True
                     return
                 GameLogManager.log_service_debug(f"点击:{node.get('tag')}")
@@ -299,15 +312,10 @@ class GameDialog:
         event = args.get("event")
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
-        bag_sprite = game_ui.get_surface_sprite("对话UI")  # 需要加上UI的偏移
-
-        # 松开的时候把控件的抬起事件触发一下. 避免鼠标离开区域之后 又回来 没有按下鼠标也出发拖拽事件
-        for _com in self._alone_component.values():
-            if _com and _com.type == "slider" and hasattr(_com, "mouse_up"):
-                _com.mouse_up(event)
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
 
         for [node, gui_rect] in self.__GUI_rect_list:
-            if gui_rect.collidepoint(mouse_pos[0] - bag_sprite.get("rect").x, mouse_pos[1] - bag_sprite.get("rect").y):
+            if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
                 if node.get('tag') == "button":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_up"):
@@ -328,18 +336,23 @@ class GameDialog:
         event = args.get("event")
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
-        bag_sprite = game_ui.get_surface_sprite("对话UI")  # 需要加上UI的偏移
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
         for [node, gui_rect] in self.__GUI_rect_list:
-            if gui_rect.collidepoint(mouse_pos[0] - bag_sprite.get("rect").x, mouse_pos[1] - bag_sprite.get("rect").y):
+            if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
                 if node.get('tag') == "slider":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_move"):
                         event["mouse_pos"] = (
-                            event["mouse_pos"][0] - bag_sprite.get("rect").x,
-                            event["mouse_pos"][1] -bag_sprite.get("rect").y
+                            event["mouse_pos"][0] - win_sprite.get("rect").x,
+                            event["mouse_pos"][1] - win_sprite.get("rect").y
                         )
                         if _com.mouse_move(event):
                             return
+
+                        # 触发变化事件
+                        _be = node.get("attrs").get("@change")
+                        if _be and self.dialog_event_dict.get(_be):
+                            self.dialog_event_dict[_be](_com.value)
                         self.update_blit = True
                     return
                 return
@@ -376,7 +389,6 @@ class GameDialog:
             self.__has_scroll_wheel = True
 
     def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-        key_event = event.get("event")
         if self.__focus_node is None:
             return
 
@@ -386,24 +398,6 @@ class GameDialog:
                 return
             return
 
-        # target_uuid = self.__focus_node.get("attrs").get("__node_uuid")
-        # text = self.__focus_node.get("text", "")
-        # if text is None:
-        #     text = ""
-        # new_text = f"{text}{key_event.text}"
-        #
-        # # 调用函数进行更新
-        # updated = self.update_element_by_uuid(self.__cached_result, target_uuid, new_text)
-        # if updated:
-        #     self.__cursor_index += len(key_event.text)
-        #     self.__focus_node["text"] = str(new_text)
-        #     self.update_blit = True
-        #     self.__has_focus = True
-
-    # def key_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-    #     """键盘抬起事件"""
-    #     pass
-
     def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.__focus_node:
             _com = self._alone_component.get(self.__focus_node.get("target"))
@@ -411,73 +405,6 @@ class GameDialog:
                 if _com.key_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                     return
                 return
-            # 要更新的 __node_uuid 和新文本
-            # target_uuid = self.__focus_node.get("attrs").get("__node_uuid")
-            # new_text = self.__focus_node.get("text", "")
-            # if new_text is None:
-            #     new_text = ""
-            # if hasattr(event.get("event"), "text"):
-            #     return
-            #
-            # match event.get("key_name"):
-            #     case "escape":
-            #         self.__has_focus = False
-            #         self.__focus_node["attrs"]["focus"] = False
-            #         self.update_blit = True
-            #         self.__has_focus = True
-            #         return
-            #     # 制表符
-            #     case "tab":
-            #         new_text = "﹒" * 4
-            #         self.__cursor_index += 4
-            #     # 左移
-            #     case "left":
-            #         self.__cursor_index = max(self.__cursor_index - 1, 0)
-            #         self.blink_tick = 0
-            #         self.blink_show = True
-            #         self.update_blit = True
-            #         self.__has_focus = True
-            #         return
-            #     # 右移
-            #     case "right":
-            #         self.__cursor_index = min(len(new_text), self.__cursor_index + 1)
-            #         self.blink_tick = 0
-            #         self.blink_show = True
-            #         self.update_blit = True
-            #         self.__has_focus = True
-            #         return
-            #
-            #     # 退格键,删除光标之前的元素
-            #     case "backspace":
-            #         if self.__cursor_index > 0:  # 确保光标不在最前面
-            #             # 删除光标前一个字符
-            #             new_text = new_text[:self.__cursor_index - 1] + new_text[self.__cursor_index:]
-            #             self.__cursor_index -= 1  # 光标前移
-            #             self.blink_tick = 0
-            #             self.blink_show = True
-            #         else:
-            #             return
-            #     # 撤销后一位元素
-            #     case "delete":
-            #         if self.__cursor_index < len(new_text):  # 确保光标不在最后面
-            #             # 删除光标后一个字符
-            #             new_text = new_text[:self.__cursor_index] + new_text[self.__cursor_index + 1:]
-            #             # 光标位置不需要移动
-            #             self.blink_tick = 0
-            #             self.blink_show = True
-            #         else:
-            #             return
-            #
-            #     case _:
-            #         # self.__cursor_index += 1
-            #         return
-            #
-            # # 调用函数进行更新
-            # updated = self.update_element_by_uuid(self.__cached_result, target_uuid, new_text)
-            # if updated:
-            #     self.__focus_node["text"] = str(new_text)
-            #     self.update_blit = True
-            #     self.__has_focus = True
 
     def keyboard_pressed(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """键盘长按事件"""
@@ -531,7 +458,7 @@ class GameDialog:
         if self.__curr_npc:
             text_surface = self.gm.game_font.get_text_surface_line(self.__curr_npc.name, True, 14, "#FFFF00")
             dialog_sur.blit(text_surface, (10, 35))
-        game_ui.set_surface_ui("对话UI", dialog_sur)
+        game_ui.set_surface_ui(self.dialog_key, dialog_sur)
 
     def blit_with_clipping(self, target_surface, source_surface, render_x, render_y, clip_top):
         """根据置顶的位置裁切UI, 让滚动之后,不会超出UI范围显示, 且平滑的渲染"""
@@ -651,7 +578,7 @@ class GameDialog:
             return 0, 0
 
         _biw, _bih = 0, 0
-        if tag not in ["tabs", "tab-item", "row", "input", "button","checkbox"]:
+        if tag not in ["tabs", "tab-item", "row", "input", "button", "checkbox"]:
             # 渲染bg
             _biw, _bih = __render_bg_img()
 
@@ -716,7 +643,7 @@ class GameDialog:
         elif tag == "button11":
             if node_text:
                 game_ui: GameUI = self.gm.get("游戏UI")
-                params = game_ui.get_surface_sprite("对话UI_按钮")
+                params = game_ui.get_surface_sprite(f"{self.dialog_key}_按钮")
                 frame_size = params["frame"]["size"]
                 # frame_index = params["frame"]["index"]
 
@@ -765,8 +692,8 @@ class GameDialog:
                 exist_com = self._alone_component.get(_com_id)
 
                 game_ui: GameUI = self.gm.get("游戏UI")
-                params = game_ui.get_surface_sprite("对话UI_按钮")
-                frame_size = params["frame"]["size"]
+                params = game_ui.get_surface_sprite(f"{self.dialog_key}_按钮")
+                # frame_size = params["frame"]["size"]
 
                 input_width = int(attrs.get("width", 80))
                 input_height = int(attrs.get("height", 25))
@@ -916,7 +843,8 @@ class GameDialog:
                 input_width = int(attrs.get("width", 160))
                 input_height = int(attrs.get("height", 28))
                 field = attrs.get("field", "")
-                border_color = attrs.get("border-color", "#10c34e")
+                # border_color = attrs.get("border-color", "#10c34e")
+                border_color = attrs.get("border-color")
                 is_password = attrs.get("type", "text") == "password"
                 exist_com = GameInput(pygame.Surface((input_width, input_height), pygame.SRCALPHA),
                                       pygame.Rect([render_x, render_y, input_width, input_height]),
@@ -1343,6 +1271,16 @@ class GameDialog:
             render_y += 5
             self.__GUI_rect_list.append([{"tag": tag, "target": _com_id, "attrs": attrs}, exist_com.rect])
 
+        elif tag == "br":
+            render_y += 20
+        elif tag == "hr":
+            render_y += 3
+            color = attrs.get("color", "#FFFFFF")
+            start = (render_x, render_y)
+            end = (dialog_sur.width - render_x, render_y)
+            width = 1
+            pygame.draw.line(dialog_sur, color, start, end, width)
+            render_y += 3
         else:
             for child in children:
                 render_y = self.create_node(dialog_sur, child, render_x, render_y, curr_style,
@@ -1357,13 +1295,13 @@ class GameDialog:
         game_ui: GameUI = self.gm.get("游戏UI")
         # 购买
         if cmd_name == "client://shop&buy":
-            game_ui.change_ui_layer("对话UI")
+            game_ui.change_ui_layer(self.dialog_key)
             self.gm.shop_system.add_shops(self.__curr_npc.shop_item, self.__curr_npc.name, ShopType.BUY)
             return
 
         # 出售
         if cmd_name == "client://shop&sell":
-            game_ui.change_ui_layer("对话UI")
+            game_ui.change_ui_layer(self.dialog_key)
             self.gm.shop_system.add_shops(self.gm.get("主角").bag.get_items_all(), self.__curr_npc.name, ShopType.SELL)
             return
 
@@ -1443,7 +1381,7 @@ class GameDialog:
             _com.destroy()
         self._alone_component.clear()  # 清空组件
         game_ui: GameUI = self.gm.get("游戏UI")
-        game_ui.close_surface_ui("对话UI")
+        game_ui.close_surface_ui(self.dialog_key)
         self.__cached_result = None
         # if self.dialog_callback:
         #     self.dialog_callback({"__type": "close"})
@@ -1456,7 +1394,7 @@ class GameDialog:
         """
         _com = self._alone_component.get(dom_id)
         if _com:
-            return _com
+            return _com.value
 
         def _find(node: dict):
             if node.get("attrs").get("id") == dom_id:

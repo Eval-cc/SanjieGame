@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<div id="app" width="200" height="185" color="#FF15FF" padding="15" close="false">
+
+    <input type="text" id="account"
+           placeholder="输入账号"
+           background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
+           clip-path="-1 30 80 60"
+           field="账号"
+    />
+    <input type="password" id="password"
+           placeholder="这是一个输入框"
+           background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
+           clip-path="-1 30 80 60"
+           field="密码"
+    />
+    <br/>
+
+    <row justify="space-between" padding="0 10 0 10">
+        <button background-image="#ROOT_S\gw_b1.png" @click="login" width="60" height="25">进入游戏</button>
+        <button background-image="#ROOT_S\gw_b1.png" @click="unline" width="60" height="25">离线模式</button>
+    </row>
+</div>
+</body>
+</html>

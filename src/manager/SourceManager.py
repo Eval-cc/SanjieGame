@@ -54,6 +54,8 @@ class SourceManager:
     """对话脚本目录"""
     cfg_ui_path = r"resources\language\ui"
     """游戏UI目录"""
+    cfg_db_path = r"resources\config\db"
+    """游戏本地数据库目录"""
     cfg_root_path = "resources"
     """资源包目录"""
 
@@ -91,6 +93,7 @@ class SourceManager:
         SourceManager.cfg_map_path = os.path.join(game_root, "resources/config")
         SourceManager.cfg_task_path = os.path.join(game_root, "resources/sv_task")
         SourceManager.cfg_ui_path = os.path.join(game_root, r"resources\language\ui")
+        SourceManager.cfg_db_path = os.path.join(game_root, r"resources\config\db")
 
         SourceManager.cfg_root_path = os.path.join(game_root, "resources")
 

@@ -36,6 +36,7 @@ from src.network.GameWorldServer import GameWorldServer
 from src.network.LoginServer import LoginServer
 
 from src.render.RenderMap import RenderMap
+from src.system.GameDialog import GameDialog
 from src.system.GameMusic import GameMusicManager
 from src.system.GameTipDialog import GameDialogBoxManager
 from src.system.GameToast import GameToastManager
@@ -57,6 +58,10 @@ class GameLogin(SpriteBase):
         self.rect = pygame.Rect(self.gm.game_win_rect)
 
         GameMusicManager.play_bgm("login_bg")
+
+        self.dialog_list: dict[str, "GameDialog"] = {
+        }
+
         # ========== 第一阶段：立即加载静态背景 ==========
         self._load_static_background()
         self._load_login_ui()
@@ -141,45 +146,8 @@ class GameLogin(SpriteBase):
         加载UI 比如选区 和输入账号
         :return:
         """
-        game_ui: "GameUI" = self.gm.get("游戏UI")
-        _width = 200
-        _height = 230
-        dialog_title = SourceManager.ssurface_scale(
-            SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
-            [_width, 32]).convert_alpha()
-
-        dialog_bg = pygame.Surface((_width, _height - 30), pygame.SRCALPHA)
-        dialog_bg.fill(self.gm.game_font.hex_color_to_rgb("#000000"))
-        dialog_bg.set_alpha(170)
-
-        dialog_sur = pygame.Surface((_width, _height), pygame.SRCALPHA)
-        dialog_sur.fill((0, 0, 0, 0))
-        dialog_sur.blit(dialog_title, (2, 0))
-        dialog_sur.blit(dialog_bg, (0, 30))
-        pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
-                         (0, 30, _width, _height - 30), 1)
-
-        [_, login_ui_rect, login_ui_params] = game_ui.load_system_ui(dialog_sur,
-                                                                     [_width, _height],
-                                                                     "top_right_center",
-                                                                     {
-                                                                         "name": "登录账号UI",
-                                                                         "drag": True,
-                                                                         "drag_rect": ["auto", "auto", "-25px", 30],
-                                                                         "move_callback": self.login_ui_move,
-                                                                         "mouse_move": lambda **args: True,
-                                                                         "show": True,
-                                                                         "bubble": True
-                                                                     }, sort=True)
 
         self.__components: List[Union["GameComponentBase"]] = []
-
-        self.user_name = GameInput(self.gm.game_win, pygame.Rect([login_ui_rect.x, login_ui_rect.y, 170, 30]),
-                                   placeholder="请输入账号", offset=(10, 50), bg_color="#000000", text_color="#FFFFFF",
-                                   field="账号", parent_id=login_ui_params.get("name"))
-        self.user_pwd = GameInput(self.gm.game_win, pygame.Rect([login_ui_rect.x, login_ui_rect.y, 170, 30]),
-                                  placeholder="请输入密码", is_password=True, offset=(10, 90), bg_color="#000000",
-                                  text_color="#FFFFFF", field="密码", parent_id=login_ui_params.get("name"))
 
         # 1. 提取公共参数（减少重复赋值）
         common_props = {
@@ -190,72 +158,6 @@ class GameLogin(SpriteBase):
             "bg_image": SourceManager.ui_system_path + "/gw_b1.png",
             "bg_press_image": SourceManager.ui_system_path + "/gw_b2.png"
         }
-
-        self.enter_game = GameButton(
-            self.gm.game_win,  # 渲染表面
-            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 60, 25),  # 位置和大小
-            "进入游戏",
-            offset=(20, 140), parent_id=login_ui_params.get("name"),
-            border_color="#2980b9",
-            **common_props
-        )
-        self.enter_game_offline = GameButton(
-            self.gm.game_win,  # 渲染表面
-            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 60, 25),  # 位置和大小
-            "离线模式",
-            border_color="#2980b9",
-            offset=(110, 140), parent_id=login_ui_params.get("name"),
-            **common_props
-        )
-        # 创建滑块实例
-        self.music_slider = GameSlider(
-            self.gm.game_win,  # 渲染表面
-            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 150, 30),  # 位置和大小
-            # rect=pygame.Rect(100, 100, 200, 30),  # 滑块轨道的位置和大小 (x, y, width, height)
-            min_value=0,  # 最小值
-            max_value=100,  # 最大值
-            initial_value=round(GameMusicManager.bgm_volume * 100),  # 初始值
-            bg_color="#CCCCCC",  # 轨道背景颜色
-            slider_color="#666666",  # 滑块颜色
-            active_slider_color="#333333",  # 滑块激活时的颜色
-            border_color="#000000",  # 边框颜色
-            value_color="#FFFFFF",
-            border_width=1,  # 边框宽度
-            slider_width=20,  # 滑块宽度
-            slider_height=30,  # 滑块高度
-            show_value=True,  # 是否显示当前值
-            value_format="{:.0f}%",  # 值显示格式
-            offset=(0, login_ui_rect.height - 60),  # 位置偏移量
-            parent_id=login_ui_params.get("name")
-        )
-        self.custom_toggle = GameCheckBox(
-            self.gm.game_win,  # 渲染表面
-            # rect=pygame.Rect(100, 200, 200, 30),
-            pygame.Rect(login_ui_rect.x, login_ui_rect.y, 120, 30),  # 位置和大小
-            text="是否播放音乐",
-            is_checked=True,
-            is_radio=True,
-            font_size=12,
-            text_color="#FF0000",  # 红色文本
-            bg_color="#FFFFFF",  # 白色背景
-            border_color="#00FF00",  # 绿色边框
-            check_color="#0000FF",  # 蓝色选中标记
-            hover_color="#FFFF00",  # 黄色悬停背景
-            border_width=2,
-            check_width=3,
-            bg_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface((0, 0, 28, 28)),
-            bg_check_image=SourceManager.load(fr"{SourceManager.ui_system_path}/checkbox.png").subsurface(
-                (56, 0, 28, 28)),
-            offset=(0, login_ui_rect.height - 30),
-            parent_id=login_ui_params.get("name")
-        )
-
-        self.__components.append(self.user_name)
-        self.__components.append(self.user_pwd)
-        self.__components.append(self.enter_game)
-        self.__components.append(self.enter_game_offline)
-        self.__components.append(self.music_slider)
-        self.__components.append(self.custom_toggle)
 
         # 2. 定义差异化配置 (文字, 垂直偏移量, 回调函数)
         btn_configs = [
@@ -280,14 +182,17 @@ class GameLogin(SpriteBase):
             self.__components.append(button)
             _start_y -= 32
 
-        game_ui.set_surface_ui("登录账号UI", dialog_sur)
+        # game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
         def __entrance_game(acc_name, data):
             self.gm.game_dialog.close_dialog()
+            for dl in self.dialog_list.values():
+                dl.close_dialog()
+                dl = None
             # 先把角色挂载上
             self.gm.add("主角", Player(acc_name, data))
             GameMapManager.change_map(data.get("scene_id"))
-            game_ui.remove_surface_ui("登录账号UI")
+            # game_ui.remove_surface_ui("登录账号UI")
             self.gm.shop_system = ShopSystem(self.gm)
             self.gm.add("地图", RenderMap())
 
@@ -297,7 +202,10 @@ class GameLogin(SpriteBase):
             点击登录
             :return:
             """
-            if len(self.user_name.text) == 0 or len(self.user_pwd.text) == 0:
+            dl = self.dialog_list.get("游戏登录UI")
+            user_name = dl.get_val("account")
+            password = dl.get_val("password")
+            if len(user_name) == 0 or len(password) == 0:
                 GameDialogBoxManager.dialog("账号密码不能为空")
                 return
             login = LoginServer("http://169.254.249.130:8089/")
@@ -333,9 +241,7 @@ class GameLogin(SpriteBase):
 
             login.on_login_success = _on_login_success
             login.on_login_failed = _on_login_failed
-            login.login(self.user_name.text, self.user_pwd.text)
-
-        self.enter_game.set_on_click(on_button_click)
+            login.login(user_name, password)
 
         def on_button_click_offline():
             """
@@ -345,12 +251,37 @@ class GameLogin(SpriteBase):
             self._load_static_background()
             self.playing = False
             self.show_static_bg = True
+            test_user = "eval"
+            db = self.gm.game_local_db
+            # 1. 检查或创建账号
+            acc_res = db.fetch_all("SELECT id FROM accounts WHERE username = ?", (test_user,))
+            if not acc_res:
+                # 创建账号
+                db.insert_row("accounts", {
+                    "username": test_user,
+                    "password": "123",  # 离线模式默认密码
+                    "is_lock": 0
+                })
+                acc_res = db.fetch_all("SELECT id FROM accounts WHERE username = ?", (test_user,))
 
-            def run_async():
-                # 清理所有组件
-                self.cleanup(False)
-                # 可以尝试用sqlite或者其他的什么技术进行离线数据的存储
-                __entrance_game("eval", {
+            acc_id = acc_res[0]['id']
+
+            # 2. 更新最后登录时间
+            db.update_row("accounts",
+                          {"latest_time": time.strftime('%Y-%m-%d %H:%M:%S')},
+                          "id = ?", (acc_id,))
+
+            # 3. 查询该账号下的角色列表
+            characters = db.fetch_all("SELECT * FROM fso WHERE account_id = ?", (acc_id,))
+
+            if characters:
+                # 如果有多个角色，这里可以弹出个简单的 UI 让玩家选
+                # 这里演示直接取第一个角色
+                player_data = characters[0]
+            else:
+                # 4. 如果没角色，创建初始角色
+                player_data = {
+                    "account_id": acc_id,
                     "avatar": "105进阶幽莹娃娃",
                     "name": "Eval",
                     "scene_id": "1042",
@@ -363,28 +294,40 @@ class GameLogin(SpriteBase):
                     "attack_speed": 5,
                     "anim_model": "3",
                     "items": "1,0,0,1,1|1,0,3,2,3|1,1,3,3,3|1,2,3,4,3|1,3,3,2,3|1,3,3,3,3",
-                })
+                }
+                db.insert_row("fso", player_data)
+                # 重新获取完整数据（包含自增ID等）
+                player_data = db.fetch_all("SELECT * FROM fso WHERE account_id = ?", (acc_id,))[0]
+
+            def run_async():
+                # 清理所有组件
+                self.cleanup(False)
+                # 可以尝试用sqlite或者其他的什么技术进行离线数据的存储
+                __entrance_game("eval", player_data)
                 time.sleep(1)
                 self.cleanup()
 
             threading.Thread(target=run_async, daemon=True).start()
 
-        self.enter_game_offline.set_on_click(on_button_click_offline)
+        dl = GameDialog(self.gm, "游戏登录UI")
+        dl.show_dialog(SourceManager.cfg_ui_path + "/game_login.html",
+                       render_x=0,
+                       render_y=0,
+                       overwrite_path=True,
+                       dialog_event_dict={
+                           "login": on_button_click,
+                           "unline": on_button_click_offline
+                       }
+                       )
 
-        # 设置值改变时的回调函数
-        def on_music_volume_changed(value):
-            GameMusicManager.set_bgm_volume(round(value / 100, 2))
-
-        self.music_slider.set_on_value_changed(on_music_volume_changed)
-
-        def on_change_music(e):
-            GameMusicManager.bgm_enabled = e
-            if e:
-                GameMusicManager.resume_bgm()
-            else:
-                GameMusicManager.pause_bgm()
-
-        self.custom_toggle.set_on_toggle(on_change_music)
+        dl1 = GameDialog(self.gm, "健康游戏公告10086")
+        dl1.show_dialog(SourceManager.cfg_ui_path + "/game_HGA.html",
+                        render_x=0,
+                        render_y=0,
+                        overwrite_path=True,
+                        loc="top_left")
+        self.dialog_list.setdefault(dl.dialog_key, dl)
+        self.dialog_list.setdefault(dl1.dialog_key, dl1)
 
     def _update_frame_duration(self):
         """更新帧持续时间"""
@@ -446,19 +389,6 @@ class GameLogin(SpriteBase):
             self.current_frame = self._convert_frame(frame)
             self.current_frame_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
             self.load_progress = self.current_frame_pos / self.total_frames
-
-    # def _convert_frame(self, frame):
-    #     """
-    #     转换OpenCV帧为Pygame Surface
-    #     :param frame:
-    #     :return:
-    #     """
-    #     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    #     pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2)))
-    #     return pygame.transform.scale(
-    #         pygame_surface,
-    #         (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
-    #     )
 
     def _convert_frame(self, frame):
         # 1. 缩小 OpenCV 原始帧的大小（在转换为 Surface 前缩放效率更高）
@@ -580,6 +510,16 @@ class GameLogin(SpriteBase):
             self.gm.game_dialog.close_dialog()
             return
 
+        def on_music_volume_changed(value):
+            GameMusicManager.set_bgm_volume(round(value / 100, 2))
+
+        def on_change_music(e):
+            GameMusicManager.bgm_enabled = e
+            if e:
+                GameMusicManager.resume_bgm()
+            else:
+                GameMusicManager.pause_bgm()
+
         self.gm.game_dialog.show_dialog(SourceManager.cfg_ui_path + "/game_setting.html",
                                         render_x=0,
                                         render_y=0,
@@ -588,7 +528,11 @@ class GameLogin(SpriteBase):
                                             "confirm": self._set_confirm,
                                             "cancel": lambda: (GameToastManager.add_message(f"取消"),
                                                                self.gm.game_dialog.close_dialog()),
+                                            "bgm_change": lambda val: on_music_volume_changed(val),
+                                            "sound_change": lambda val: GameMusicManager.set_sound_volume(val),
+                                            "bgm_change_cbk": lambda val: on_change_music(val),
+                                            "sound_change_cbk": lambda val: GameMusicManager.set_sound_enabled(val),
                                         })
 
     def _set_confirm(self):
-        GameToastManager.add_message(f"确认" + str(self.gm.game_dialog.get_val("price11")))
+        GameToastManager.add_message(f"确认" + str(self.gm.game_dialog.get_val("game-bgm")))

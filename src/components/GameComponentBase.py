@@ -22,6 +22,11 @@ class GameComponentBase:
         self.parent_id = None
         self.type = "GameComponentBase"
 
+    @property
+    def value(self) -> str:
+        """获取当前值"""
+        return ""
+
     def render(self):
         pass
 

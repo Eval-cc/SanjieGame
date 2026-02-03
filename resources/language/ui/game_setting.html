@@ -6,44 +6,62 @@
 </head>
 <body>
 <div id="app" width="350" height="300" color="#FF15FF"
-     padding="0 0 0 10">
+     padding="0 0 0 10" close="false">
     <tabs>
         <tab-item title="系统设置" id="sys" background-image="#ROOT_S\gw_b1.png" width="80" height="25">
-            <p>这里是系统设置的内容...</p>
-            <p color="#FFFFFF">啊哈哈哈哈</p>
-            <a href="#common_1">继续</a>
-            <img src="task_1/207.PNG" alt=""/>
-            <checkbox label="打开游戏音乐" background-image="#ROOT_S/checkbox.png" background-image-check="#ROOT_S/checkbox.png"
-            background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"></checkbox>
-            <slider id="volume"></slider>
-            <input type="text" id="price11"
-                   placeholder="这是一个输入框"
-                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
-                   clip-path="-1 30 80 60"
-                   field="什么?"
-            />
+            <row>
+                <checkbox id="game-bgm" label="游戏音乐" background-image="#ROOT_S/checkbox.png"
+                          background-image-check="#ROOT_S/checkbox.png"
+                          background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"
+                          @change="bgm_change_cbk"></checkbox>
+                <slider id="bgm-volume" @change="bgm_change"></slider>
+            </row>
+            <row>
+                <checkbox id="game-sound" label="游戏音效" background-image="#ROOT_S/checkbox.png"
+                          background-image-check="#ROOT_S/checkbox.png"
+                          background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"
+                          @change="sound_change_cbk"></checkbox>
+                <slider id="sound-volume" @change="sound_change"></slider>
+            </row>
+
+            <br/>
+            <br/>
+
+            <!--            <p>这里是系统设置的内容...</p>-->
+            <!--            <p color="#FFFFFF">啊哈哈哈哈</p>-->
+            <!--            <a href="#common_1">继续</a>-->
+            <!--            <img src="task_1/207.PNG" alt=""/>-->
+            <!--            <checkbox id="game-bgm" label="打开游戏音乐" background-image="#ROOT_S/checkbox.png" background-image-check="#ROOT_S/checkbox.png"-->
+            <!--            background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"></checkbox>-->
+            <!--            <slider id="volume"></slider>-->
+            <!--            <input type="text" id="price11"-->
+            <!--                   placeholder="这是一个输入框"-->
+            <!--                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"-->
+            <!--                   clip-path="-1 30 80 60"-->
+            <!--                   field="什么?"-->
+            <!--            />-->
+            <row>
+                <button background-image="#ROOT_S\gw_b1.png" @click="confirm" width="80" height="25">确认</button>
+                <button background-image="#ROOT_S\gw_b1.png" @click="cancel">取消</button>
+            </row>
         </tab-item>
-        <tab-item title="按键绑定" id="keys" background-image="#ROOT_S\gw_b1.png" width="80" height="25">
-            <p>这里是修改按键的内容...</p>
-            <p color="#FFFFFF">嘿嘿嘿</p>
-            <a href="#common_1">继续</a>
-            <button
-                    font-size="13"
-                    color="#8B4726"
-                    data-client="client://bank&withdraw">
-                仓库取
-            </button>
-            <input type="text" id="total" disabled/>
-            <input type="text" id="price"
-                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"
-                   clip-path="-1 30 80 60"
-            />
+        <tab-item title="其他" id="keys" background-image="#ROOT_S\gw_b1.png" width="80" height="25">
+            <p>暂无...</p>
+            <!--            <p color="#FFFFFF">嘿嘿嘿</p>-->
+            <!--            <a href="#common_1">继续</a>-->
+            <!--            <button-->
+            <!--                    font-size="13"-->
+            <!--                    color="#8B4726"-->
+            <!--                    data-client="client://bank&withdraw">-->
+            <!--                仓库取-->
+            <!--            </button>-->
+            <!--            <input type="text" id="total" disabled/>-->
+            <!--            <input type="text" id="price"-->
+            <!--                   background-image="#ROOT_S\UI_JX\系统框架UI\exp_5-63188.png"-->
+            <!--                   clip-path="-1 30 80 60"-->
+            <!--            />-->
         </tab-item>
     </tabs>
-    <row>
-        <button background-image="#ROOT_S\gw_b1.png" @click="confirm"  width="80" height="25">确认</button>
-        <button background-image="#ROOT_S\gw_b1.png" @click="cancel">取消</button>
-    </row>
 </div>
 </body>
 </html>

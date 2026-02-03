@@ -22,6 +22,7 @@ from src.lib.TaskParingEngine import TaskParingEngine
 from src.manager.GameFont import GameFont
 from src.manager.GameLoadCsv import GameLoadCSV
 from src.manager.GameLogManger import GameLogManager
+from src.manager.LocalDBManager import LocalDBManager
 from src.manager.SourceManager import SourceManager
 
 from src.system.GameDialog import GameDialog
@@ -74,6 +75,9 @@ class GameManager:
     has_debug_render = False
     """是否启用debug模式的渲染,  此模式下会显示具体的障碍点方块以及一些详细的信息"""
 
+    game_local_db:LocalDBManager = None
+    """游戏的本地存档"""
+
     __manager_dict = {}
     """全局游戏静态类管理映射"""
     shop_system: "ShopSystem" = None
@@ -90,6 +94,7 @@ class GameManager:
         from src.necessary.GameBattle import BattleManager
         pygame.key.start_text_input()
         SourceManager.Awake()
+        cls.game_local_db = LocalDBManager()
         # 初始化消息管理器
         GameToastManager.Awake(cls.game_win.get_width(), cls.game_win.get_height(), cls)
         if cls.game_win_rect is None:

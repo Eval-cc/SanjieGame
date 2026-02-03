@@ -103,6 +103,9 @@ class GameSlider(SpriteBase, GameComponentBase):
         self.need_redraw = True
         self.parent_id = parent_id
 
+    def __str__(self):
+        return self._value
+
     @property
     def value(self) -> float:
         """获取当前值"""

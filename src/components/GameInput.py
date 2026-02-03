@@ -96,7 +96,9 @@ class GameInput(SpriteBase, GameComponentBase):
         # 初始化缓存表面
         self._create_base_surface()
 
-    def __str__(self):
+    @property
+    def value(self) -> str:
+        """获取当前值"""
         return self.text
 
     def set_rect(self, rect: pygame.Rect):
@@ -110,64 +112,79 @@ class GameInput(SpriteBase, GameComponentBase):
         self.need_redraw = True
 
     def _create_base_surface(self):
-        """创建基础表面（背景+边框）"""
-        self.cached_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
-        self.cached_surface.fill(pygame.Color(self.bg_color))
-        pygame.draw.rect(
-            self.cached_surface,
-            pygame.Color(self.border_color),
-            (0, 0, self.rect.width, self.rect.height),
-            self.border_width
-        )
+        """创建基础表面（包含标签空间和输入框）"""
+        # 计算总尺寸：标签宽度 + 输入框宽度
+        total_width = self.rect.width + self.__field_size[0]
+        total_height = max(self.rect.height, self.__field_size[1])
+
+        # 创建一个支持透明的大表面作为完整容器
+        self.cached_surface = pygame.Surface((total_width, total_height), pygame.SRCALPHA)
+
+        # 1. 绘制标签 (如果存在)
+        if self.field_surface:
+            # 垂直居中对齐标签
+            field_y = (total_height - self.field_surface.get_height()) // 2
+            self.cached_surface.blit(self.field_surface, (0, field_y))
+
+        # 2. 绘制输入框背景
+        # 输入框的位置要偏移开标签的宽度
+        input_rect = pygame.Rect(self.__field_size[0], 0, self.rect.width, self.rect.height)
+        pygame.draw.rect(self.cached_surface, pygame.Color(self.bg_color), input_rect)
+
+        # 3. 绘制边框
+        if self.border_color:
+            pygame.draw.rect(
+                self.cached_surface,
+                pygame.Color(self.border_color),
+                input_rect,
+                self.border_width
+            )
 
     def render(self):
         """
-        渲染输入框到指定表面
+        渲染完整输入框组件（含标签）
         """
         self.update()
+
+        # 如果不需要重绘且已有缓存
         if not self.need_redraw and self.cached_surface:
-            # 渲染字段名
-            if self.field_surface:
-                self.render_surface.blit(self.field_surface, self._field_rect)
-            self.render_surface.blit(self.cached_surface, self.rect)
+            # 渲染位置需要向左偏移标签宽度，因为 self.rect 指向的是输入框
+            self.render_surface.blit(self.cached_surface, (self.rect.x - self.__field_size[0], self.rect.y))
             return self.cached_surface
 
+        # 创建基础底图
         self._create_base_surface()
-        # 处理文本显示
+
+        # --- 处理文本内容 ---
         display_text = self.text if self.text else self.placeholder
-        # 如果是密码框且不是占位文本，则显示星号
         if self.is_password and self.text:
             display_text = "*" * len(self.text)
 
         text_color = self.text_color if self.text else "#888888"
-        # 计算可见文本
         text_surface = GameFont.get_text_surface_line(display_text, True, font_color=text_color)
         text_width = GameFont.get_text_size(self.text)[0]
 
-        # 处理文本滚动
-        if text_width > self.rect.width - 10:  # 留出边距
-            # 计算光标位置
-            # prefix = self.text[:self.cursor_index]
-            prefix_width = text_width
+        # 文本滚动逻辑 (保持原样，但注意绘制坐标需加上偏移)
+        input_field_offset = self.__field_size[0]
 
-            # 调整滚动偏移
+        if text_width > self.rect.width - 10:
+            prefix_width = text_width
             cursor_screen_pos = prefix_width - self.scroll_offset
-            if cursor_screen_pos > self.rect.width - 15:  # 光标接近右边界
+            if cursor_screen_pos > self.rect.width - 15:
                 self.scroll_offset = prefix_width - (self.rect.width - 15)
-            elif cursor_screen_pos < 5:  # 光标接近左边界
+            elif cursor_screen_pos < 5:
                 self.scroll_offset = max(0, prefix_width - 5)
 
-            # 裁剪文本表面
             visible_width = min(text_width, self.rect.width - 10)
             cropped_surface = pygame.Surface((visible_width, self.rect.height), pygame.SRCALPHA)
             cropped_surface.blit(text_surface, (-self.scroll_offset, 0))
             text_surface = cropped_surface
 
-        # 绘制文本
+        # 绘制文本到 cached_surface (x坐标需加上偏移)
         text_y = (self.rect.height - text_surface.get_height()) // 2
-        self.cached_surface.blit(text_surface, (5, text_y))
+        self.cached_surface.blit(text_surface, (input_field_offset + 5, text_y))
 
-        # 绘制光标（只在获得焦点、闪烁显示状态时显示）
+        # --- 绘制光标 ---
         if self.has_focus and self.blink_show:
             prefix = self.text[:self.cursor_index]
             _w = GameFont.get_text_size(prefix)[0]
@@ -176,19 +193,100 @@ class GameInput(SpriteBase, GameComponentBase):
             pygame.draw.line(
                 self.cached_surface,
                 pygame.Color(self.text_color),
-                (cursor_x, 5),
-                (cursor_x, self.rect.height - 5),
+                (input_field_offset + cursor_x, 5),
+                (input_field_offset + cursor_x, self.rect.height - 5),
                 1
             )
 
-        # 渲染到目标表面
-        self.render_surface.blit(self.cached_surface, self.rect)
+        # 最终输出到主渲染表面
+        render_pos = (self.rect.x - input_field_offset, self.rect.y)
+        self.render_surface.blit(self.cached_surface, render_pos)
         self.need_redraw = False
 
-        # 渲染字段名
-        if self.field_surface:
-            self.render_surface.blit(self.field_surface, self._field_rect)
         return self.cached_surface
+
+    # def _create_base_surface(self):
+    #     """创建基础表面（背景+边框）"""
+    #     self.cached_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+    #     self.cached_surface.fill(pygame.Color(self.bg_color))
+    #
+    #     if self.border_color:
+    #         pygame.draw.rect(
+    #             self.cached_surface,
+    #             pygame.Color(self.border_color),
+    #             (0, 0, self.rect.width, self.rect.height),
+    #             self.border_width
+    #         )
+    #
+    # def render(self):
+    #     """
+    #     渲染输入框到指定表面
+    #     """
+    #     self.update()
+    #     if not self.need_redraw and self.cached_surface:
+    #         # 渲染字段名
+    #         if self.field_surface:
+    #             self.render_surface.blit(self.field_surface, self._field_rect)
+    #         self.render_surface.blit(self.cached_surface, self.rect)
+    #         return self.cached_surface
+    #
+    #     self._create_base_surface()
+    #     # 处理文本显示
+    #     display_text = self.text if self.text else self.placeholder
+    #     # 如果是密码框且不是占位文本，则显示星号
+    #     if self.is_password and self.text:
+    #         display_text = "*" * len(self.text)
+    #
+    #     text_color = self.text_color if self.text else "#888888"
+    #     # 计算可见文本
+    #     text_surface = GameFont.get_text_surface_line(display_text, True, font_color=text_color)
+    #     text_width = GameFont.get_text_size(self.text)[0]
+    #
+    #     # 处理文本滚动
+    #     if text_width > self.rect.width - 10:  # 留出边距
+    #         # 计算光标位置
+    #         # prefix = self.text[:self.cursor_index]
+    #         prefix_width = text_width
+    #
+    #         # 调整滚动偏移
+    #         cursor_screen_pos = prefix_width - self.scroll_offset
+    #         if cursor_screen_pos > self.rect.width - 15:  # 光标接近右边界
+    #             self.scroll_offset = prefix_width - (self.rect.width - 15)
+    #         elif cursor_screen_pos < 5:  # 光标接近左边界
+    #             self.scroll_offset = max(0, prefix_width - 5)
+    #
+    #         # 裁剪文本表面
+    #         visible_width = min(text_width, self.rect.width - 10)
+    #         cropped_surface = pygame.Surface((visible_width, self.rect.height), pygame.SRCALPHA)
+    #         cropped_surface.blit(text_surface, (-self.scroll_offset, 0))
+    #         text_surface = cropped_surface
+    #
+    #     # 绘制文本
+    #     text_y = (self.rect.height - text_surface.get_height()) // 2
+    #     self.cached_surface.blit(text_surface, (5, text_y))
+    #
+    #     # 绘制光标（只在获得焦点、闪烁显示状态时显示）
+    #     if self.has_focus and self.blink_show:
+    #         prefix = self.text[:self.cursor_index]
+    #         _w = GameFont.get_text_size(prefix)[0]
+    #         prefix_width = _w - self.scroll_offset
+    #         cursor_x = max(5, min(5 + prefix_width, self.rect.width - 5))
+    #         pygame.draw.line(
+    #             self.cached_surface,
+    #             pygame.Color(self.text_color),
+    #             (cursor_x, 5),
+    #             (cursor_x, self.rect.height - 5),
+    #             1
+    #         )
+    #
+    #     # 渲染到目标表面
+    #     self.render_surface.blit(self.cached_surface, self.rect)
+    #     self.need_redraw = False
+    #
+    #     # 渲染字段名
+    #     if self.field_surface:
+    #         self.render_surface.blit(self.field_surface, self._field_rect)
+    #     return self.cached_surface
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         """处理鼠标点击事件"""

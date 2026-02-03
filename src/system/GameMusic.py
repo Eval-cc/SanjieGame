@@ -133,3 +133,12 @@ class GameMusicManager:
     def set_sound_volume(cls, volume: float):
         """设置音效音量"""
         cls.sound_volume = max(0.0, min(1.0, volume))
+
+    @classmethod
+    def set_sound_enabled(cls, enabled: bool):
+        """
+        修改音效的状态
+        :param enabled:
+        :return:
+        """
+        cls.sound_enabled = enabled

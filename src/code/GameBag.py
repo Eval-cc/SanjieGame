@@ -663,7 +663,7 @@ class GameBag:
                 self.update_blit = True
                 return
 
-    def mouse_up(self):
+    def mouse_up(self, **arg):
         self.__drag = False
         for [_, gui_params] in self.__GUI_rect_list:
             gui_params.get("frame")["index"] = 0
@@ -701,7 +701,7 @@ class GameBag:
         self.__select_item = None
         self.__move_path.clear()  # 清空移动路径
 
-    def mouse_move(self):
+    def mouse_move(self, **args):
         check_bag = self.__check_bag()
         self.__hover_item = check_bag
         self.__drag = False
@@ -1038,3 +1038,61 @@ class GameBag:
             "texture": mask_sur_full,
             "rect": loc
         }
+
+    def refresh_bag(self, bag_data_str: str):
+        """
+        根据服务器/数据库传入的字符串数据刷新背包
+        格式: page,y,x,id,count|page,y,x,id,count
+        """
+        if not bag_data_str:
+            return
+
+        # 1. 过滤空字符串，避免 split(",") 报错
+        item_raw_list = [ii for ii in bag_data_str.split("|") if ii.strip()]
+
+        # 记录本次数据中所有有效的位置
+        new_positions = set()
+
+        for item_raw in item_raw_list:
+            try:
+                # 解析格式: 1,0,0,1,1 -> page, y, x, id, count
+                p, y, x, item_id, count = [int(i) for i in item_raw.split(",")]
+            except (ValueError, IndexError):
+                continue
+
+            # 内部索引转换：页码从 1 开始转为从 0 开始
+            page_idx = p - 1
+            if not (0 <= page_idx < self.max_page):
+                continue
+
+            pos_key = f"{page_idx}#{y}#{x}"
+            new_positions.add(pos_key)
+
+            current_item = self.items[page_idx][y][x]
+
+            # 判定 A: 该位置为空，或者道具 ID 变了 -> 创建新道具并赋予短 UID
+            if current_item is None or current_item.ID != str(item_id):
+                item_cfg = SourceManager.get_csv("items", str(item_id))
+                if item_cfg:
+                    new_data = copy.deepcopy(item_cfg)
+                    new_data["初始使用次数"] = str(count)
+                    new_data["__pos"] = [page_idx, y, x]
+
+                    # 实例化 Item，确保其内部生成的 UID 长度适中
+                    new_obj = Item(new_data)
+                    self.items[page_idx][y][x] = new_obj
+                    self.items_index_dict[pos_key] = True
+
+            # 判定 B: 道具 ID 没变，仅数量变化 -> 更新数量，保留原 UID
+            elif current_item.count != count:
+                current_item.count = count
+
+        # 2. 清理逻辑：如果背包原有位置不在新数据中，视为已被移除
+        for index_key in list(self.items_index_dict.keys()):
+            if self.items_index_dict[index_key] and index_key not in new_positions:
+                pg, iy, ix = [int(i) for i in index_key.split("#")]
+                # 只有当前页或全量同步时才执行清理，这里采用全量清理逻辑
+                self.items[pg][iy][ix] = None
+                self.items_index_dict[index_key] = False
+
+        self.update_blit = True  # 标记需要重绘 UI
