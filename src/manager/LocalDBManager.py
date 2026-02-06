@@ -118,3 +118,77 @@ class LocalDBManager:
 
     def close(self):
         self.conn.close()
+
+    def execute_transaction(self, sql_list: list[tuple[str, tuple]]):
+        """
+        批量执行 SQL 事务
+        :param sql_list: 列表，每个元素为 (sql_字符串, params_元组)
+        """
+        with self._instance_lock:
+            cursor = self.conn.cursor()
+            try:
+                for sql, params in sql_list:
+                    cursor.execute(sql, params)
+                self.conn.commit()
+                return True
+            except Exception as e:
+                self.conn.rollback()
+                print(f"[DB Error] Transaction failed: {e}")
+                return False
+            finally:
+                cursor.close()
+
+    def update_batch(self, table_name: str, updates: list[dict], condition_key: str):
+        """
+        批量更新同一张表的多个条目（事务处理）
+        :param table_name: 表名
+        :param updates: 数据列表，例如 [{'value': '0.5', 'key': 'bgm'}, {'value': '1', 'key': 'sound'}]
+        :param condition_key: 作为 WHERE 条件的 key 名
+        """
+        sql_list = []
+        for data in updates:
+            # 提取条件值并从数据字典中移除，防止 SET key = key
+            cond_val = data.pop(condition_key)
+            set_clause = ", ".join([f"{k} = ?" for k in data.keys()])
+            sql = f"UPDATE {table_name} SET {set_clause} WHERE {condition_key} = ?"
+            params = tuple(data.values()) + (cond_val,)
+            sql_list.append((sql, params))
+
+        return self.execute_transaction(sql_list)
+
+    def insert_batch(self, table_name: str, data_list: list[dict]) -> bool:
+        """
+        批量新增行 (事务处理)
+        :param table_name: 表名
+        :param data_list: 字典列表 [{'col1': v1}, {'col1': v2}]
+        """
+        if not data_list:
+            return True
+
+        # 提取列名（以第一条数据为准）
+        columns = ", ".join(data_list[0].keys())
+        placeholders = ", ".join(["?"] * len(data_list[0]))
+        sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+
+        # 构造参数列表
+        params_list = [tuple(d.values()) for d in data_list]
+
+        with self._instance_lock:
+            cursor = self.conn.cursor()
+            try:
+                cursor.executemany(sql, params_list)  # 使用 executemany 高效批量处理
+                self.conn.commit()
+                return True
+            except Exception as e:
+                self.conn.rollback()
+                print(f"[DB Error] Batch Insert failed: {e}")
+                return False
+            finally:
+                cursor.close()
+
+    def delete_row(self, table_name: str, condition: str, params: tuple = ()) -> int:
+        """
+        删除行: delete_row('accounts', 'id = ?', (1,))
+        """
+        sql = f"DELETE FROM {table_name} WHERE {condition}"
+        return self.execute_non_query(sql, params)

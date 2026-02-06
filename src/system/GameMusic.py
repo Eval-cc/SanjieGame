@@ -114,6 +114,8 @@ class GameMusicManager:
         if cls._current_bgm is not None and cls.bgm_enabled:
             cls._bgm_channel.unpause()
             cls._bgm_channel.set_volume(cls.bgm_volume)
+            return True
+        return False
 
     @classmethod
     def stop_bgm(cls, fade_out: int = 1000):
@@ -142,3 +144,14 @@ class GameMusicManager:
         :return:
         """
         cls.sound_enabled = enabled
+
+
+
+    @classmethod
+    def set_bgm_enabled(cls, enabled: bool):
+        """
+        修改背景音乐的状态
+        :param enabled:
+        :return:
+        """
+        cls.bgm_enabled = enabled

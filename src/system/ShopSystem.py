@@ -463,7 +463,7 @@ class ShopSystem:
                 self.update_blit = True
                 return
 
-    def mouse_up(self):
+    def mouse_up(self, **agg):
         self.__drag = False
         for [_, gui_params] in self.__GUI_rect_list:
             gui_params.get("frame")["index"] = 0
@@ -475,7 +475,7 @@ class ShopSystem:
 
         self.update_blit = True
 
-    def mouse_move(self):
+    def mouse_move(self, **agg):
         check_bag = self.__check_bag()
         self.__hover_item = check_bag
         self.__drag = False

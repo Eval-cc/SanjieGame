@@ -57,10 +57,42 @@ class GameLogin(SpriteBase):
         self.gm: "GameManager" = gm
         self.rect = pygame.Rect(self.gm.game_win_rect)
 
+        # 获取本地保存的配置信息
+        bgm_cfg = self.gm.game_local_db.fetch_on("SELECT * FROM 'main'.'system_settings' WHERE key = 'bgm'")
+        if bgm_cfg:
+            if bgm_cfg.get("value") == "1":
+                GameMusicManager.play_bgm("login_bg")
+        else:
+            GameMusicManager.play_bgm("login_bg")
+
+        GameMusicManager.set_sound_enabled(True)
+        # 获取本地保存的配置信息
+        scfg = self.gm.game_local_db.fetch_all("SELECT * FROM 'main'.'system_settings'")
+        if scfg:
+            for c in scfg:
+                if c.get("key") == "sound_volume":
+                    # 获取原始值
+                    raw_volume = float(c.get("value"))
+                    normalized_volume = raw_volume / 100.0
+                    volume = max(0.0, min(normalized_volume, 1.0))
+                    GameMusicManager.set_sound_volume(volume)
+                    continue
+                elif c.get("key") == "bgm_volume":
+                    raw_volume = float(c.get("value"))
+                    normalized_volume = raw_volume / 100.0
+                    volume = max(0.0, min(normalized_volume, 1.0))
+                    GameMusicManager.set_bgm_volume(volume)
+                    continue
+                elif c.get("key") == "sound":
+                    GameMusicManager.set_sound_enabled(c.get("value") == "1")
+                    continue
+                elif c.get("key") == "bgm":
+                    GameMusicManager.set_bgm_enabled(c.get("value") == "1")
+                    continue
+
         GameMusicManager.play_bgm("login_bg")
 
-        self.dialog_list: dict[str, "GameDialog"] = {
-        }
+        self.dialog_list: dict[str, "GameDialog"] = {}
 
         # ========== 第一阶段：立即加载静态背景 ==========
         self._load_static_background()
@@ -516,7 +548,8 @@ class GameLogin(SpriteBase):
         def on_change_music(e):
             GameMusicManager.bgm_enabled = e
             if e:
-                GameMusicManager.resume_bgm()
+                if not GameMusicManager.resume_bgm():
+                    GameMusicManager.play_bgm("login_bg")
             else:
                 GameMusicManager.pause_bgm()
 
@@ -532,7 +565,26 @@ class GameLogin(SpriteBase):
                                             "sound_change": lambda val: GameMusicManager.set_sound_volume(val),
                                             "bgm_change_cbk": lambda val: on_change_music(val),
                                             "sound_change_cbk": lambda val: GameMusicManager.set_sound_enabled(val),
+                                        },
+                                        load_val={
+                                            "sound-volume": GameMusicManager.sound_volume * 100,
+                                            "bgm-volume": GameMusicManager.bgm_volume * 100,
+                                            "game-bgm": GameMusicManager.bgm_enabled,
+                                            "game-sound": GameMusicManager.sound_enabled
                                         })
 
     def _set_confirm(self):
-        GameToastManager.add_message(f"确认" + str(self.gm.game_dialog.get_val("game-bgm")))
+        bgm_enable = "1" if self.gm.game_dialog.get_val("game-bgm") else "0"
+        sound_enable = "1" if self.gm.game_dialog.get_val("game-sound") else "0"
+        sound_volume = round(self.gm.game_dialog.get_val("sound-volume"))
+        bgm_volume = round(self.gm.game_dialog.get_val("bgm-volume"))
+
+        # 构造需要更新的数据列表
+        settings_to_update = [
+            {"key": "bgm", "value": bgm_enable},
+            {"key": "sound", "value": sound_enable},
+            {"key": "sound_volume", "value": str(sound_volume)},
+            {"key": "bgm_volume", "value": str(bgm_volume)}
+        ]
+        self.gm.game_local_db.update_batch("system_settings", settings_to_update, condition_key="key")
+        self.gm.game_dialog.close_dialog()

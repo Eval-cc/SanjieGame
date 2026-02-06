@@ -14,14 +14,14 @@
                           background-image-check="#ROOT_S/checkbox.png"
                           background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"
                           @change="bgm_change_cbk"></checkbox>
-                <slider id="bgm-volume" @change="bgm_change"></slider>
+                <slider id="bgm-volume" @change="bgm_change" min="0" max="100"></slider>
             </row>
             <row>
                 <checkbox id="game-sound" label="游戏音效" background-image="#ROOT_S/checkbox.png"
                           background-image-check="#ROOT_S/checkbox.png"
                           background-image-clip="0, 0, 28, 28" background-image-check-clip="56, 0, 28, 28"
                           @change="sound_change_cbk"></checkbox>
-                <slider id="sound-volume" @change="sound_change"></slider>
+                <slider id="sound-volume" @change="sound_change" min="0" max="100"></slider>
             </row>
 
             <br/>

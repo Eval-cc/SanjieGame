@@ -14,6 +14,7 @@ from typing import Dict, TYPE_CHECKING, Any
 
 import pygame
 
+from src.Mapper.FsoMapper import FsoMapper
 from src.code.SpriteBase import SpriteBase
 from src.lib.FindPath_Theta import ThetaStarPathfinder
 from src.lib.FindPath_AStart import AStarPathfinder
@@ -24,6 +25,7 @@ from src.manager.GameLoadCsv import GameLoadCSV
 from src.manager.GameLogManger import GameLogManager
 from src.manager.LocalDBManager import LocalDBManager
 from src.manager.SourceManager import SourceManager
+from src.manager.GameWorldManager import GameWorldManager
 
 from src.system.GameDialog import GameDialog
 from src.system.GameMusic import GameMusicManager
@@ -123,6 +125,7 @@ class GameManager:
         GameMusicManager.Awake()
         GameDialogBoxManager.Awake(cls)
         BattleManager.Awake(cls)
+        FsoMapper.Awake(cls)
 
     @classmethod
     def __refresh_layer(cls):
@@ -216,6 +219,8 @@ class GameManager:
         # 置顶的渲染
         for render in cls.__items_need_sticky:
             render()
+
+        GameWorldManager.update_timed_events()
 
     @classmethod
     def find_path(cls, target_pos: list[int], passable: list, start_pos=None, has_npc: bool = False):

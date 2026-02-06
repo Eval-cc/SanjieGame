@@ -9,7 +9,7 @@
 @Date    : 2025/10/17 22:11
 @Desc    : 输入框组件
 """
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 import pygame
 from pygame.key import ScancodeWrapper
 
@@ -478,3 +478,7 @@ class GameInput(SpriteBase, GameComponentBase):
         self._field_rect.x = self.offset[0] + x
         self._field_rect.y = self.__field_size[1] // 2 + self.rect.y
         self.need_redraw = True
+
+
+    def update_value(self, value: Any):
+        self.text = str(value)

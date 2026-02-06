@@ -11,7 +11,7 @@
 """
 
 import pygame
-from typing import Dict, Tuple, Optional, Callable
+from typing import Dict, Tuple, Optional, Callable, Any
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
 from src.manager.GameFont import GameFont
@@ -274,3 +274,36 @@ class GameSlider(SpriteBase, GameComponentBase):
     def set_on_value_changed(self, callback: Callable[[float], None]):
         """设置值改变回调函数"""
         self.on_value_changed = callback
+
+    def update_value(self, value: Any):
+        """
+        根据滑块定义的 min_value 和 max_value 更新当前值
+        :param value: 外部传入的数值（支持 int, float, str）
+        """
+        try:
+            # 1. 尝试将输入转换为浮点数
+            num = float(value)
+
+            # 2. 自动比例转换逻辑
+            # 如果当前滑块定义的是 0.0~1.0 (通常用于音量)
+            if self.min_value == 0 and self.max_value <= 1.0:
+                # 如果传入的值大于 max_value，说明可能需要按比例缩小
+                if num > self.max_value:
+                    if num > 10:
+                        num = num / 100.0  # 假设是百分制转小数
+                    else:
+                        num = num / 10.0  # 假设是10分制转小数
+
+            # 如果当前滑块定义的是 0~100，但传入的是 0~1 的小数
+            elif self.max_value > 10 and num <= 1.0 and num > 0:
+                # 这种情况下通常不需要自动放大，因为 1.0 可能是用户想设成 1
+                # 但如果 num 是很小的浮点数，可以考虑 num = num * 100
+                self._value = self.min_value
+
+                # 3. 核心赋值：利用已经写好的 @value.setter 处理重绘和回调
+            # setter 内部已经有了: self._value = max(self.min_value, min(self.max_value, new_value))
+            self.value = num
+
+        except (ValueError, TypeError):
+            # 如果转换失败，不进行更新或设为最小值
+                self._value = self.min_value

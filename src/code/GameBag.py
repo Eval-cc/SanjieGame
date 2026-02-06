@@ -1096,3 +1096,29 @@ class GameBag:
                 self.items_index_dict[index_key] = False
 
         self.update_blit = True  # 标记需要重绘 UI
+
+    def serialize_bag(self) -> str:
+        """
+        将当前背包数据序列化为原始字符串格式
+        格式: page,y,x,id,count|page,y,x,id,count
+        """
+        serialized_items = []
+
+        # 遍历所有索引
+        for index_key, has_item in self.items_index_dict.items():
+            if has_item:
+                # 解析索引键获取位置
+                page_idx, y, x = [int(i) for i in index_key.split("#")]
+
+                # 获取对应的物品对象
+                item = self.items[page_idx][y][x]
+
+                if item:
+                    # 将页码索引恢复为 1-based (符合 refresh_bag 的逻辑)
+                    page_num = page_idx + 1
+                    # 拼接单个物品数据
+                    item_str = f"{page_num},{y},{x},{item.ID},{item.count}"
+                    serialized_items.append(item_str)
+
+        # 使用 | 连接所有物品字符串
+        return "|".join(serialized_items)

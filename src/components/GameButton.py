@@ -10,7 +10,7 @@
 @Desc    : 按钮组件
 """
 
-from typing import Dict, Tuple, Optional, Callable
+from typing import Dict, Tuple, Optional, Callable, Any
 import pygame
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
@@ -225,3 +225,6 @@ class GameButton(SpriteBase,GameComponentBase):
     def set_on_click(self, callback: Callable):
         """设置点击回调函数"""
         self.on_click = callback
+
+    def update_value(self, value: Any):
+        self.text = value

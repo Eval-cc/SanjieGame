@@ -69,12 +69,13 @@ class GameDialog:
         # 存放对应的事件字典
         self.dialog_event_dict = {}
         # 存放单独的控件
-        self._alone_component: dict[str, GameComponentBase] = {}
+        self._alone_component: Dict[str, GameComponentBase] = {}
 
         self.dialog_key = win_key
 
     def show_dialog(self, dialog_path: str, npc=None, render_x: int = 5, render_y: int = -1, dialog_callback=None,
-                    overwrite_path: bool = False, dialog_event_dict: dict[str, Any] = None, loc: str = "middle"):
+                    overwrite_path: bool = False, dialog_event_dict: Dict[str, Any] = None, loc: str = "middle",
+                    load_val: Dict[str, Any] = None):
 
         """调用NPC对话"""
         self.__scroll_y = 0
@@ -195,6 +196,10 @@ class GameDialog:
             self.__render_full_height = actual_render_end
             self.__scroll_max = max(0, self.__render_full_height - dialog_sur.get_height() + 20)
 
+            # 节点创建完成, 开始尝试初始化值
+            if load_val is not None:
+                self._load_val(load_val)
+
             game_ui.set_surface_ui(self.dialog_key, dialog_sur)
             if self.__scroll_max > 0:
                 scrollbar_x = dialog_sur.get_width() - 8
@@ -204,6 +209,7 @@ class GameDialog:
 
             if game_ui.get_surface_show(self.dialog_key):
                 return
+
 
             game_ui.change_ui_layer(self.dialog_key, center=True)
             self.update_blit = True  # 触发页面重绘
@@ -1155,13 +1161,17 @@ class GameDialog:
                 slider_active_color = attrs.get("slider-active-color", "#333333")
                 border_color = attrs.get("border-color", "#000000")
                 color = attrs.get("color", "#FFFFFF")
+
+                val = attrs.get("value", "0")
+                min_val = attrs.get("min", "0")
+                max_val = attrs.get("max", "1")
                 # 创建滑块实例
                 exist_com = GameSlider(
                     pygame.Surface((com_width, com_height), pygame.SRCALPHA),
                     pygame.Rect(render_x, render_y, com_width, com_height),  # 位置和大小
-                    min_value=0,  # 最小值
-                    max_value=100,  # 最大值
-                    initial_value=round(GameMusicManager.bgm_volume * 100),  # 初始值
+                    min_value=float(min_val),  # 最小值
+                    max_value=float(max_val),  # 最大值
+                    initial_value=float(val),  # 初始值
                     bg_color=bg_color,  # 轨道背景颜色
                     slider_color=slider_color,  # 滑块颜色
                     active_slider_color=slider_active_color,  # 滑块激活时的颜色
@@ -1418,3 +1428,46 @@ class GameDialog:
         :return:
         """
         return self.__cached_result is not None
+
+    def _load_val(self, val: Dict[str, Any]):
+        """
+        根据传入的字典，自动为指定 ID 的控件或节点加载值
+        :param val: 格式如 {"username": "eval", "volume_slider": 0.5}
+        """
+        if not val or not isinstance(val, dict):
+            return
+
+        for dom_id, value in val.items():
+            # 1. 首先尝试从独立组件中查找 (GameInput, GameSlider, GameCheckBox等)
+            if dom_id in self._alone_component:
+                component = self._alone_component[dom_id]
+                # 动态调用组件的 value 设置（GameComponentBase 子类通常有 value 属性）
+                try:
+                    component.update_value(value)
+                except Exception as e:
+                    GameLogManager.log_service_error(f"加载组件值失败 [ID:{dom_id}]: {e}")
+                continue
+
+            # 2. 如果独立组件里没找到，则递归遍历渲染树，更新静态标签的内容
+            if self.__cached_result:
+                self.__update_node_text_recursive(self.__cached_result, dom_id, value)
+
+    def __update_node_text_recursive(self, node: dict, target_id: str, new_value: Any):
+        """递归查找并更新节点 text"""
+        # 检查当前节点 ID
+        if node.get("attrs", {}).get("id") == target_id:
+            # 更新 text 字段，并确保它是字符串用于显示
+            node["text"] = str(new_value)
+            # 标记需要清理缓存，以便在下一次重绘时重新生成 Surface
+            cache_key_p = f"ui_label_{node.get('text')}"
+            cache_key_a = f"ui_link_{node.get('text')}"
+            self.__ui_cache_dict.pop(cache_key_p, None)
+            self.__ui_cache_dict.pop(cache_key_a, None)
+            return True
+
+        # 递归子节点
+        children = node.get("children", [])
+        for child in children:
+            if self.__update_node_text_recursive(child, target_id, new_value):
+                return True
+        return False

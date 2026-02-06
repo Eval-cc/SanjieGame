@@ -11,7 +11,7 @@
 """
 
 import pygame
-from typing import Dict, Tuple, Optional, Callable, List
+from typing import Dict, Tuple, Optional, Callable, List, Any
 from src.code.SpriteBase import SpriteBase
 from src.components.GameComponentBase import GameComponentBase
 from src.manager.GameFont import GameFont
@@ -258,3 +258,15 @@ class GameCheckBox(SpriteBase, GameComponentBase):
     def set_on_toggle(self, callback: Callable[[bool], None]):
         """设置状态改变回调函数"""
         self.on_toggle = callback
+
+    def update_value(self, value: Any):
+        if isinstance(value, bool):
+            self._is_checked = value
+        elif isinstance(value, (int, float)):
+            # 如果是数字，通常 0 为 False，非 0 为 True
+            self._is_checked = bool(value)
+        elif isinstance(value, str):
+            # 如果是字符串，处理常见的 "true"/"1" 情况
+            self._is_checked = value.lower() in ("true", "1", "yes")
+        else:
+            self._is_checked = False

@@ -15,8 +15,10 @@ from typing import List, TYPE_CHECKING
 
 import pygame
 
+from src.Mapper.FsoMapper import FsoMapper
 from src.code.GameBag import GameBag
 from src.manager.GameLogManger import GameLogManager
+from src.manager.GameWorldManager import GameWorldManager
 from src.necessary.GameBattle import BattleManager
 from src.system.Animator import Animator
 from src.code.SpriteBase import SpriteBase
@@ -64,6 +66,7 @@ class Player(SpriteBase):
         self.animator = Animator(GameManager)
         self.eff_animator_stick = Animator(GameManager)
         self.acc_name = acc_name
+        self.fso_id = data.get("id")
 
         self.__g_pos = [data.get("sx"), data.get("sy")]
 
@@ -259,6 +262,9 @@ class Player(SpriteBase):
 
             # 名称的宽度
             self.name_width = GameFont.get_text_size(f"{self.name}")[0]
+
+            # 初始化完成之后, 开始加个事件监听, 每xx分钟更新角色数据
+            GameWorldManager.register_timed_event(1,FsoMapper.update_pos)
 
         except AttributeError as ae:
             GameDialogBoxManager.dialog(f"初始化失败 {ae}")
