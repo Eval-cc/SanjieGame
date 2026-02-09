@@ -49,7 +49,7 @@ class FsoMapper:
         params = (
             GameMapManager.map_id, upos[0], upos[1], u_player.healthy, u_player.mana,
             u_player.attack, u_player.defense, u_player.attack_speed,
-            u_player.bag.serialize_bag(), u_player.fso_id
+            u_player.bag.get_full_save_data(), u_player.fso_id
         )
 
         cls.gm.game_local_db.execute_non_query(sql, params)

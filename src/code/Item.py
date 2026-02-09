@@ -63,6 +63,9 @@ class Item(SpriteBase):
         '技能ID': {'attr': 'skill_id', 'default': None, 'type': str},
         '套装ID': {'attr': 'set_id', 'default': None, 'type': str},
         '说明': {'attr': 'description', 'default': None, 'type': str},
+        '主属性': {'attr': 'primary_attr_id', 'default': 0, 'type': int},
+        '副属性': {'attr': 'secondary_attr_id', 'default': 0, 'type': int},
+        '过期时间': {'attr': 'expire_time', 'default': 0, 'type': int},
     }
 
     def __init__(self, item_data: dict):
@@ -114,14 +117,26 @@ class Item(SpriteBase):
         self.bind = False  # 默认所有的道具都是绑定的
         self.enhance_level = 0  # 强化等级
 
+        self.primary_attr_id = -1  # 主属性 ID (基础攻击、防御等)   暂时应该用不到. 先留着
+        self.secondary_attr_id = -1  # 副属性 ID (强化等级、词条等)
+        self.expire_time = -1  # 过期时间 (时间戳)
+
         # 当前道具位于背包的位置, 第一个参数是在第几页, 后面两个是背包的 x, y 坐标系
         self.__pos = [0, 0, 0]
 
         self.set_data(item_data)
 
     def set_data(self, item_data: dict):
-        page, x, y = item_data.get("__pos")
-        self.__pos = [int(page), int(x), int(y)]
+        # page, x, y = item_data.get("__pos")
+        # self.__pos = [int(page), int(x), int(y)]
+        # 1. 处理位置信息 (增加安全检查)
+        pos_data = item_data.get("__pos")
+        if pos_data and len(pos_data) >= 3:
+            self.__pos = [int(pos_data[0]), int(pos_data[1]), int(pos_data[2])]
+        else:
+            # 使用 -1 表示该道具当前不在背包格子内（即在装备栏）
+            self.__pos = [-1, -1, -1]
+
         for config_key, mapping in Item.FIELD_MAPPING.items():
             raw_value = item_data.get(config_key)  # 从配置中取值
             if config_key == "Icon":
@@ -204,20 +219,115 @@ class Item(SpriteBase):
         }
 
     def get_attr(self):
-        # 构建一个字典，存储要显示的属性和值
-        return {
-            "伤害": self.damage,
-            "防御": self.defense,
-            "闪躲": self.dodge,
-            "命中": self.hit,
-            "攻击速度": self.attack_speed,
-            "必杀率": self.critical_rate,
-            "MaxHp": self.max_hp,
-            "MaxMp": self.max_mp,
-            "抗火": self.fire_resistance,
-            "抗水": self.water_resistance,
-            "抗毒": self.poison_resistance
+        """
+        获取装备属性包。
+        不再内部计算百分比，而是分类汇总，交给 Player 处理。
+        """
+        # 1. 基础固有属性 (固定值)
+        res = {
+            "fixed": {
+                "伤害": self.damage, "防御": self.defense, "闪躲": self.dodge,
+                "命中": self.hit, "攻击速度": self.attack_speed, "必杀率": self.critical_rate,
+                "MaxHp": self.max_hp, "MaxMp": self.max_mp,
+                "抗火": self.fire_resistance, "抗水": self.water_resistance, "抗毒": self.poison_resistance
+            },
+            "points": {},  # 强度点数 (力量、体质等)
+            "ratio": {}  # 百分比加成 (伤害%, 生命% 等)
         }
+
+        pass_attr = ['ID', '可装备附魔', '可宠物附魔', '备注', '有效', '说明', '阶段', '道具类型', '品质', '附加价格']
+        percentage_keys = ['攻击速度', '伤害', '防御', '命中', '闪躲', '爆击率', 'hp', 'mp']
+        point_keys = ['力量强度', '体质强度', '精准强度', '敏捷强度', '智力强度']
+
+        def collect_script_data(attr_id):
+            if attr_id <= 0: return
+            script_data = SourceManager.get_csv("attribs", str(attr_id))
+            if not script_data: return
+
+            for key, val in script_data.items():
+                if key in pass_attr or not val: continue
+                try:
+                    num_val = float(val)
+                    if num_val == 0: continue
+
+                    if key in percentage_keys:
+                        # 统一存入 ratio，除以 100 方便计算
+                        res["ratio"][key] = res["ratio"].get(key, 0.0) + (num_val / 100.0)
+                    elif key in point_keys:
+                        res["points"][key] = res["points"].get(key, 0.0) + num_val
+                    else:
+                        res["fixed"][key] = res["fixed"].get(key, 0) + int(num_val)
+                except:
+                    continue
+
+        collect_script_data(self.primary_attr_id)
+        collect_script_data(self.secondary_attr_id)
+
+        return res
+
+
+    def get_display_attrs(self):
+        """
+        获取用于 UI 显示的战斗增益属性列表。
+        排除掉‘可锻造’、‘可交易’等系统字段。
+        返回格式: [ (文本, 颜色), ... ]
+        """
+        display_results = []
+
+        # 1. 基础战斗属性 (黄色)
+        # 我们只列出 FIELD_MAPPING 中属于数值加成的部分
+        combat_fields = [
+            '命中', '伤害', '防御', '闪躲', '攻击速度', '必杀率',
+            'MaxHp', 'MaxMp', '抗火', '抗水', '抗毒'
+        ]
+
+        for config_key in combat_fields:
+            mapping = self.FIELD_MAPPING.get(config_key)
+            if not mapping:
+                continue
+
+            attr_name = mapping.get("attr")
+            val = getattr(self, attr_name, 0)
+
+            # 只有数值大于 0 才显示基础加成
+            if isinstance(val, (int, float)) and val > 0:
+                display_results.append((f"{config_key}: +{val}", "#FFFF00"))
+
+        # 2. 脚本额外增益属性 (绿色)
+        # 过滤掉非战斗增益的字段
+        pass_attr = ['ID', '可装备附魔', '可宠物附魔', '备注', '有效', '说明', '阶段', '道具类型', '品质', '附加价格']
+        # 需要显示为百分比的字段
+        percentage_attr = ['攻击速度', '伤害', '防御', '命中', '闪躲', '爆击率', '杀怪经验获得率', '杀怪金钱获得率']
+
+        def collect_script_attrs(attr_id):
+            if not attr_id or attr_id <= 0:
+                return
+            # 这里 SourceManager 内部会处理 get，我们直接拿数据
+            script_data = SourceManager.get_csv("attribs", str(attr_id))
+            if not script_data:
+                return
+
+            for ak, val in script_data.items():
+                # 如果在忽略列表，或者值为空，则跳过
+                if ak in pass_attr or not val:
+                    continue
+                try:
+                    num_val = int(float(val))
+                    if num_val <= 0:
+                        continue
+
+                    # 格式化数值：百分比 or 纯数字
+                    display_val = f"{num_val}%" if ak in percentage_attr else f"{num_val}"
+                    # display_results.append((f"{ak}: +{display_val}", "#00E500"))
+                    display_results.append((f"{ak}: +{display_val}", "#FF0000"))
+                except (ValueError, TypeError):
+                    continue
+
+        # 按顺序采集主、副属性脚本中的增益
+        collect_script_attrs(self.primary_attr_id)
+        collect_script_attrs(self.secondary_attr_id)
+
+        return display_results
 
     def get_pos(self):
         """返回道具的坐标, page,x,y"""

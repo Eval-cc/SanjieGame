@@ -145,6 +145,7 @@ class GameUI(SpriteBase):
 
             elif loc == "bottom_right":
                 sur_rect.x, sur_rect.y = win_right - sur_rect.width, win_bottom - sur_rect.height
+
         elif pos is not None:
             sur_rect.x = pos[0]
             sur_rect.y = pos[1]

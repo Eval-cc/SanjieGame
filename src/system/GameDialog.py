@@ -211,7 +211,7 @@ class GameDialog:
                 return
 
 
-            game_ui.change_ui_layer(self.dialog_key, center=True)
+            game_ui.change_ui_layer(self.dialog_key, center=loc == "middle")
             self.update_blit = True  # 触发页面重绘
 
     def mouse_down(self, **args):

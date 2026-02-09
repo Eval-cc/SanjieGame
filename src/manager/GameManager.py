@@ -108,7 +108,7 @@ class GameManager:
             cls.add("相机", cls.game_camera)
 
         # 初始化脚本
-        load_cav_arr = ["npcs", "items", "item_type", "skills", "user_actor", "exp"]
+        load_cav_arr = ["npcs", "items", "item_type", "skills", "user_actor", "exp","attribs"]
         for csv_name in load_cav_arr:
             if not os.path.exists(rf"{SourceManager.cfg_csv_path}/{csv_name}.csv"):
                 GameLogManager.log_service_error(f"无法找到脚本:{csv_name}")

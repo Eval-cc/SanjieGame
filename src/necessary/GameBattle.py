@@ -198,7 +198,7 @@ class _Battle(SpriteBase):
             return
         [cmd_bg, cmd_rect, cmd_params] = game_ui.load_system_ui(
             rf"{SourceManager.ui_system_path}\battle\指令框_人物.png",
-            loc="top_right_center",
+            loc="right_center",
             options=
             {
                 "name": "指令框_人物",
@@ -449,14 +449,14 @@ class _Battle(SpriteBase):
                 self.update_blit = True
                 return
 
-    def mouse_up_ui(self):
+    def mouse_up_ui(self, **arg):
         """鼠标抬起事件-UI"""
         for [_, gui_params] in self.__GUI_rect_list:
             gui_params.get("frame")["index"] = 0
 
         self.update_blit = True
 
-    def mouse_move_ui(self):
+    def mouse_move_ui(self, **arg):
         """鼠标移动事件-UI"""
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
@@ -469,7 +469,7 @@ class _Battle(SpriteBase):
             gui_params.get("frame")["index"] = 0
         self.update_blit = True
 
-    def mouse_out_ui(self):
+    def mouse_out_ui(self, **arg):
         """鼠标移出事件-UI"""
         for [_, gui_params] in self.__GUI_rect_list:
             gui_params.get("frame")["index"] = 0

@@ -9,6 +9,7 @@
 @Date    ：2025/2/14 下午2:05
 @Describe: 角色类
 """
+import math
 import time
 from functools import partial
 from typing import List, TYPE_CHECKING
@@ -91,6 +92,21 @@ class Player(SpriteBase):
 
         self.__load_ui(data)
         self.__init_status(data)
+
+        # --- 新增：记录裸体基础属性 (Base Stats) ---
+        # 只有升级、吃永久果实才会修改这些 base 变量
+        self.base_attack = self.attack
+        self.base_max_hp = self.max_healthy
+        self.base_base_mp = self.mana
+        self.base_defense = self.defense
+        self.base_attack_speed = self.attack_speed
+        self.base_miss = self.miss
+        self.base_strength = self.strength
+        self.base_constitution = self.constitution
+        self.base_intelligence = self.intelligence
+        self.base_agile = self.agile
+        self.base_endurance = self.endurance
+
         # 加载动画
         self.load_animations()
 
@@ -754,27 +770,175 @@ class Player(SpriteBase):
 
         self.update_blit = True
 
-    def change_status(self, status: dict, add: bool = True):
-        for k in status.keys():
-            val = int(status.get(k))
-            if not add:
-                val = -val
-            if k == "伤害":
-                self.attack += val
-                continue
-            if k == "最大生命值":
-                self.max_healthy += val
-                continue
-            if k == "最大魔法值":
-                self.mana += val
-                continue
-            if k == "攻击速度":
-                self.attack_speed += val
-                continue
-            if k == "防御":
-                self.defense += val
-                continue
-            if k == "闪躲":
-                self.miss += val
-                continue
+    # def change_status(self, status: dict, add: bool = True):
+        # for k in status.keys():
+        #     val = int(status.get(k))
+        #     if not add:
+        #         val = -val
+        #     if k == "伤害":
+        #         self.attack += val
+        #         continue
+        #     if k == "最大生命值":
+        #         self.max_healthy += val
+        #         continue
+        #     if k == "最大魔法值":
+        #         self.mana += val
+        #         continue
+        #     if k == "攻击速度":
+        #         self.attack_speed += val
+        #         continue
+        #     if k == "防御":
+        #         self.defense += val
+        #         continue
+        #     if k == "闪躲":
+        #         self.miss += val
+        #         continue
+        # self.update_blit = True
+
+    def change_status_Deprecate(self, status: dict, add: bool = True):
+        """
+        修改角色属性
+        :param status: 属性字典，例如 {'力量': 10, '伤害': 5.5}
+        :param add: True 为穿装备（加属性），False 为脱装备（减属性）
+        """
+        for k, raw_val in status.items():
+            try:
+                # 向下取整并转为整数
+                val = math.floor(float(raw_val))
+                if not add:
+                    val = -val
+
+                # 属性映射逻辑
+                if k == "伤害" or k == "attack":
+                    self.attack += val
+                elif k == "最大生命值" or k == "hp":
+                    self.max_healthy += val
+                elif k == "最大魔法值" or k == "mp":
+                    self.mana += val
+                elif k == "攻击速度" or k == "attack_speed":
+                    self.attack_speed += val
+                elif k == "防御" or k == "defense":
+                    self.defense += val
+                elif k == "闪躲" or k == "miss":
+                    self.miss += val
+                # 如果你有其他属性如 力量、敏捷等，继续在这里补充
+                elif hasattr(self, k):
+                    # 尝试通过反射直接修改同名属性（如果存在）
+                    current_attr = getattr(self, k)
+                    setattr(self, k, current_attr + val)
+                else:
+                    # 暂不支持的属性
+                    print(f"[属性系统] 暂不支持的属性类型: {k} (值: {val})")
+
+            except (ValueError, TypeError):
+                print(f"[属性系统] 属性值格式错误: {k} = {raw_val}")
+
+        self.update_blit = True  # 触发 UI 重绘
+
+
+    def change_status(self, status: dict = None, add: bool = True):
+        """
+        现在这个方法主要作为一个触发器。
+        无论传入什么，我们都直接根据当前装备栏的所有装备重新刷新最终属性。
+        """
+        self.refresh_final_status()
         self.update_blit = True
+
+
+    def refresh_final_status(self):
+        """
+        核心计算逻辑：基于裸体属性计算百分比
+        公式：最终值 = int(基础值 + 装备固定值 + (基础值 * 装备百分比总和) + 强度转化)
+        """
+        # 1. 汇总所有穿戴装备提供的三种加成
+        total_fixed = {}
+        total_ratio = {}
+        total_points = {}
+
+        # 注意：这里确保 self.bag.equips 对应的是你的装备栏字典
+        for key, slot in self.bag.equips.items():
+            item = slot.get("item")
+            if not item:
+                continue
+
+            # 获取 Item.py 返回的结构化字典: {"fixed": {}, "ratio": {}, "points": {}}
+            attr_pack = item.get_attr()
+
+            # 累计固定值 (Flat)
+            for k, v in attr_pack.get("fixed", {}).items():
+                total_fixed[k] = total_fixed.get(k, 0) + v
+            # 累计百分比 (Ratio)
+            for k, v in attr_pack.get("ratio", {}).items():
+                total_ratio[k] = total_ratio.get(k, 0.0) + v
+            # 累计强度点数 (Points)
+            for k, v in attr_pack.get("points", {}).items():
+                total_points[k] = total_points.get(k, 0) + v
+
+        # --- A. 更新面板五围属性 (STATUS_POS 中对应的强度值) ---
+        # 最终力量 = 裸体力量 + 装备提供的力量强度点数
+        self.strength = self.base_strength + int(total_points.get("力量强度", 0))
+        self.constitution = self.base_constitution + int(total_points.get("体质强度", 0))
+        self.intelligence = self.base_intelligence + int(total_points.get("智力强度", 0))
+        self.agile = self.base_agile + int(total_points.get("敏捷强度", 0))
+        self.endurance = self.base_endurance + int(total_points.get("精准强度", 0))
+
+        # --- B. 计算二级属性转换 (强度 -> 固定值追加) ---
+        # 力量强度 -> 伤害 (2:1)
+        total_fixed["伤害"] = total_fixed.get("伤害", 0) + (int(total_points.get("力量强度", 0)) // 2)
+        # 体质强度 -> HP (2:3)
+        total_fixed["MaxHp"] = total_fixed.get("MaxHp", 0) + (int(total_points.get("体质强度", 0) * 3) // 2)
+        # 智力强度 -> MP (2:1)
+        total_fixed["MaxMp"] = total_fixed.get("MaxMp", 0) + (int(total_points.get("智力强度", 0)) // 2)
+        # 敏捷强度 -> 闪躲 (3:1)
+        total_fixed["闪躲"] = total_fixed.get("闪躲", 0) + (int(total_points.get("敏捷强度", 0)) // 3)
+
+        # --- C. 执行最终公式计算 (所有结果向下取整) ---
+        # 计算攻击力 (Attack)
+        self.attack = int(math.floor(
+            self.base_attack + total_fixed.get("伤害", 0) + (self.base_attack * total_ratio.get("伤害", 0.0))
+        ))
+
+        # 计算最大生命 (Max HP)
+        self.max_healthy = int(math.floor(
+            self.base_max_hp + total_fixed.get("MaxHp", 0) + (self.base_max_hp * total_ratio.get("hp", 0.0))
+        ))
+
+        # 计算最大魔法 (Max MP)
+        self.mana = int(math.floor(
+            self.base_base_mp + total_fixed.get("MaxMp", 0) + (self.base_base_mp * total_ratio.get("mp", 0.0))
+        ))
+
+        # 计算防御 (Defense)
+        self.defense = int(math.floor(
+            self.base_defense + total_fixed.get("防御", 0) + (self.base_defense * total_ratio.get("防御", 0.0))
+        ))
+
+        # 计算闪躲 (Miss/Dodge)
+        self.miss = int(math.floor(
+            self.base_miss + total_fixed.get("闪躲", 0) + (self.base_miss * total_ratio.get("闪躲", 0.0))
+        ))
+
+        # 计算速度 (Attack Speed)
+        self.attack_speed = int(math.floor(
+            self.base_attack_speed + total_fixed.get("攻击速度", 0) + (
+                        self.base_attack_speed * total_ratio.get("攻击速度", 0.0))
+        ))
+
+        # --- D. 状态修正与通知 ---
+        # 如果上限变小了，当前值不能超过上限
+        if self.healthy > self.max_healthy:
+            self.healthy = self.max_healthy
+
+        # 标记需要重绘 UI 面板
+        self.update_blit = True
+
+
+
+    def level_up(self):
+        """ 玩家升级时的逻辑示例 """
+        # 提升裸体基础属性
+        self.base_attack += 5
+        self.base_max_hp += 50
+
+        # 升级后必须调用一次刷新，让装备的百分比加成应用到新的基础值上
+        self.refresh_final_status()

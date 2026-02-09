@@ -279,6 +279,7 @@ class SourceManager:
         head_list = csv_data.pop(0)
         dict_list = [dict(zip(head_list, values)) for values in csv_data]
         SourceManager.__csv_dict[csv_name] = {val.get("ID"): val for val in dict_list}
+        GameLogManager.log_service_debug(f"加载脚本: {csv_name} 完成")
 
     @staticmethod
     def ssurface_scale(surface: pygame.Surface, size: list[float | int]):

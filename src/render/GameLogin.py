@@ -349,7 +349,8 @@ class GameLogin(SpriteBase):
                        dialog_event_dict={
                            "login": on_button_click,
                            "unline": on_button_click_offline
-                       }
+                       },
+                       loc="right_center"
                        )
 
         dl1 = GameDialog(self.gm, "健康游戏公告10086")

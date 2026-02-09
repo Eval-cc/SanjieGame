@@ -21,7 +21,7 @@ from src.manager.GameWorldManager import GameWorldManager
 from src.manager.SourceManager import SourceManager
 from src.necessary.GameBattle import BattleManager
 from src.render.GameUI import GameUI
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.system.GameToast import GameToastManager
 
@@ -172,31 +172,37 @@ class GameBag:
             "weapon": {
                 "type": 1,
                 "rect": (160, 75, 40, 40),
+                "item": None
             },
             # 帽子
             "hat": {
                 "type": 2,
                 "rect": (160, 25, 40, 40),
+                "item": None
             },
             # 盔甲--衣服
             "armor": {
                 "type": 3,
                 "rect": (205, 75, 40, 40),
+                "item": None
             },
             # 首饰
             "jewelry": {
                 "type": 4,
                 "rect": (205, 25, 40, 40),
+                "item": None
             },
             # 腰带
             "belt": {
                 "type": 5,
                 "rect": (160, 123, 40, 40),
+                "item": None
             },
             # 鞋子
             "shoe": {
                 "type": 6,
                 "rect": (205, 123, 40, 40),
+                "item": None
             },
         }
         for si in self.equips.values():
@@ -223,7 +229,8 @@ class GameBag:
                 self.__item_type[key][int(t_head[cfg_i])] = t[cfg_i]
 
     def add_item(self, item_id: str, total: int = 0, merge: bool = True, target_page: int = -1,
-                 target_x: int = -1, target_y: int = -1, has_call: bool = False):
+                 target_x: int = -1, target_y: int = -1, has_call: bool = False,
+                 primary_attr_id: int = 0, secondary_attr_id: int = 0, expire_time: int = 0):
         """
         向背包添加物品
         :param item_id:  道具ID
@@ -233,11 +240,14 @@ class GameBag:
         :param target_x: 直接指定追加到的横坐标
         :param target_y: 直接指定追加到的纵坐标
         :param has_call: 是否是递归调用追加道具方法
+        :param primary_attr_id: 装备额外主属性id
+        :param secondary_attr_id: 装备额外副属性id
+        :param expire_time: 装备过期时间 0 则永久
         :return:
         """
         call_total = 0
 
-        item_data: dict[str, str] = SourceManager.get_csv("items", str(item_id))
+        item_data: dict[str, str | int | list] = SourceManager.get_csv("items", str(item_id))
         if item_data is None:
             GameToastManager.add_message(f"无法追加道具:[{item_id}], 不存在的道具信息")
             GameLogManager.log_service_error(f"无法追加道具:[{item_id}], 不存在的道具信息")
@@ -299,9 +309,18 @@ class GameBag:
                 item_data["初始使用次数"] = item_count - difference
 
         item_data["__pos"] = [page, x, y]
+        if primary_attr_id:
+            item_data["主属性"] = primary_attr_id
+
+        if secondary_attr_id:
+            item_data["副属性"] = secondary_attr_id
+
+        if expire_time:
+            item_data["过期时间"] = expire_time
+
         # 挡在叠加操作的下面
         if page == -1:
-            # TODO: 需要在游戏里面提示 背包满了
+            # 背包满了
             GameToastManager.add_message("背包满了")
             return
 
@@ -947,6 +966,7 @@ class GameBag:
             __world_pos = u_player.change_status(equip.get_attr())
         else:
             self.equips[has_key]["item"] = None
+            u_player.refresh_final_status()  # 卸下后立即重算属性
         self.__curr_item_detail = None
         return True
 
@@ -1015,16 +1035,63 @@ class GameBag:
 
         render_y = 90
         if item.type == 1:
-            attrs = item.get_attr()
-            # 如果是装备, 那么就需要展示属性
-            for ak in attrs:
-                field_name = item.FIELD_MAPPING.get(ak).get("attr")
-                val = int(getattr(item, field_name))
-                if val == 0:
-                    continue
-                mask_sur.blit(GameFont.get_multiple_text(f"{ak}: +{val}", 195, 145, True, 11, "#FFFF00"),
-                              (5, render_y))
+            # 直接调用新方法获取已经排好序、分好色的数组
+            display_list = item.get_display_attrs()
+
+            for text, color in display_list:
+                # 直接根据数组里的内容渲染，相同属性名会显示多行
+                mask_sur.blit(
+                    GameFont.get_multiple_text(text, 195, 145, True, 11, color),
+                    (5, render_y)
+                )
                 render_y += 13
+
+            # attrs = item.get_attr()
+            # # 如果是装备, 那么就需要展示属性
+            # for ak in attrs:
+            #     # 跳过暂时还没有使用的属性字段
+            #     if not item.FIELD_MAPPING.get(ak):
+            #         continue
+            #     field_name = item.FIELD_MAPPING.get(ak).get("attr")
+            #     val = int(getattr(item, field_name))
+            #     if val == 0:
+            #         continue
+            #     mask_sur.blit(GameFont.get_multiple_text(f"{ak}: +{val}", 195, 145, True, 11, "#FFFF00"),
+            #                   (5, render_y))
+            #     render_y += 13
+
+            # 获取到装备的主副属性 / 过期时间
+            # pass_attr = ['ID', '可装备附魔', '可宠物附魔', '备注', '有效', '说明', '阶段', '道具类型', '品质', '附加价格']
+            # percentage_attr = ['攻击速度', '伤害', '防御', '命中', '闪躲', '水攻', '火攻', '毒攻', '水防', '火防', '毒防', 'hp', 'mp', '爆击率', '比率吸魔', '伤害吸收', '杀怪经验获得率', '杀怪金钱获得率']
+            # show_attr = ['力量强度', '体质强度', '精准强度', '敏捷强度', '智力强度', '必杀', '伤害', '防御', '命中', '闪躲', '爆击伤害', '力量', '敏捷', '体质', '精准', '智力', '吸血', '吸魔', '移动速度']
+            # skill_attr = ['装备后技能']
+            # # show_attr = ['力量强度', '体质强度', '精准强度', '敏捷强度', '智力强度', '必杀', '攻击速度', '伤害', '防御', '命中', '闪躲', '水攻', '火攻', '毒攻', '水防', '火防', '毒防', 'hp', 'mp', '爆击率', '爆击伤害', '力量', '敏捷', '体质', '精准', '智力', '吸血', '吸魔', '比率吸魔', '移动速度', '伤害吸收', '杀怪经验获得率', '杀怪金钱获得率', '装备后技能']
+            # if item.primary_attr_id:
+            #     item_data: dict[str, str] = SourceManager.get_csv("attribs", str(item.primary_attr_id))
+            #     for ak, val in item_data.items():
+            #         if len(val) == 0 or int(val) <= 0:
+            #             continue
+            #         if ak in pass_attr:
+            #             continue
+            #         if ak in percentage_attr:
+            #             val = f"{val}%"
+            #         mask_sur.blit(GameFont.get_multiple_text(f"{ak}: +{val}", 195, 145, True, 11, "#00E500"),
+            #                       (5, render_y))
+            #         render_y += 13
+            # if item.secondary_attr_id:
+            #     item_data: dict[str, str] = SourceManager.get_csv("attribs", str(item.secondary_attr_id))
+            #     for ak, val in item_data.items():
+            #         if len(val) == 0 or int(val) <= 0:
+            #             continue
+            #         if ak in pass_attr:
+            #             continue
+            #         if ak in percentage_attr:
+            #             val = f"{val}%"
+            #         mask_sur.blit(GameFont.get_multiple_text(f"{ak}: +{val}", 195, 145, True, 11, "#00E500"),
+            #                       (5, render_y))
+            #         render_y += 13
+            # if item.expire_time:
+            #     pass
 
         desc_sur = GameFont.get_multiple_text(item.description, 195, 145, True, 11, "#32CD32")
         # 道具描述
@@ -1033,19 +1100,44 @@ class GameBag:
         self.update_blit = True
         mask_sur_full = pygame.Surface((200, render_y + 10), pygame.SRCALPHA)
         mask_sur_full.blit(mask_sur, (0, 0))
+        # 内容是否太长超出了屏幕底部
+        # 1. 先通过 Surface 获取 rect 对象
+        mask_rect = mask_sur_full.get_rect()
+
+        # 2. 如果你的 loc 是当前的渲染坐标，需要把坐标同步给 rect
+        # mask_rect.topleft = loc
+        # 确保 loc 是一个有效的坐标序列
+        if loc and len(loc) >= 2:
+            # 强制转换一次确保类型正确
+            mask_rect.topleft = (int(loc[0]), int(loc[1]))
+        else:
+            # 如果 loc 异常，给个默认值防止崩溃
+            mask_rect.topleft = (0, 0)
+
+        # 3. 现在可以使用 rect 的属性进行逻辑判断了
+        if mask_rect.bottom > self.gm.game_win_rect.height:
+            # 计算超出的高度并减去
+            overflow = mask_rect.bottom - self.gm.game_win_rect.height
+            loc[1] -= overflow
+
         self.__curr_item_detail = {
             "uid": item.UID,
             "texture": mask_sur_full,
             "rect": loc
         }
 
-    def refresh_bag(self, bag_data_str: str):
+    def refresh_bag(self, raw_data: str):
         """
         根据服务器/数据库传入的字符串数据刷新背包
         格式: page,y,x,id,count|page,y,x,id,count
         """
-        if not bag_data_str:
+        if not raw_data:
             return
+
+        # 1. 拆分背包和装备栏
+        parts = raw_data.split("&")
+        bag_data_str = parts[0]
+        equip_raw = parts[1] if len(parts) > 1 else ""
 
         # 1. 过滤空字符串，避免 split(",") 报错
         item_raw_list = [ii for ii in bag_data_str.split("|") if ii.strip()]
@@ -1053,39 +1145,76 @@ class GameBag:
         # 记录本次数据中所有有效的位置
         new_positions = set()
 
+        item_data: dict[str, dict[str, str | int]] = SourceManager.get_csv("items")
         for item_raw in item_raw_list:
             try:
-                # 解析格式: 1,0,0,1,1 -> page, y, x, id, count
-                p, y, x, item_id, count = [int(i) for i in item_raw.split(",")]
-            except (ValueError, IndexError):
+                # 解析格式: xxxx,1,0,0,1,1 -> uid, page, y, x, id, count
+                parts = item_raw.split(",")
+                # 1. 基础解包：uid 是字符串，其余核心字段转 int
+                uid = parts[0]
+                # 核心字段：位置(p, y, x)、ID(item_id)、数量(count)
+                p, y, x, item_id, count = map(int, parts[1:6])
+
+                # 2. 获取剩余的动态字段
+                extras = parts[6:]
+                # 3. 业务逻辑解析
+                item_info = item_data.get(str(item_id))
+                # 主副属性 / 有效期
+                primary_attr_id = 0
+                secondary_attr_id = 0
+                expire_time = 0
+                if item_info and len(extras) > 0:
+                    match (int(item_info.get("类型"))):
+                        # 装备类
+                        case 1:
+                            primary_attr_id, secondary_attr_id, expire_time = (extras + [0] * 3)[:3]
+                        # 货币类
+                        case 2:
+                            pass
+                        # 矿石类
+                        case 3:
+                            pass
+
+                # 内部索引转换：页码从 1 开始转为从 0 开始
+                page_idx = p - 1
+                if not (0 <= page_idx < self.max_page):
+                    continue
+
+                pos_key = f"{page_idx}#{y}#{x}"
+                new_positions.add(pos_key)
+
+                current_item = self.items[page_idx][y][x]
+
+                # 判定 A: 该位置为空，或者道具 ID 变了 -> 创建新道具并赋予短 UID
+                if current_item is None or current_item.ID != str(item_id):
+                    item_cfg = SourceManager.get_csv("items", str(item_id))
+                    if item_cfg:
+                        new_data = copy.deepcopy(item_cfg)
+                        new_data["初始使用次数"] = str(count)
+                        new_data["__pos"] = [page_idx, y, x]
+
+                        if primary_attr_id:
+                            new_data["主属性"] = int(primary_attr_id)
+
+                        if secondary_attr_id:
+                            new_data["副属性"] = int(secondary_attr_id)
+
+                        if expire_time:
+                            new_data["过期时间"] = int(expire_time)
+
+                        # 实例化 Item，确保其内部生成的 UID 长度适中
+                        new_obj = Item(new_data)
+                        new_obj.UID = uid
+                        self.items[page_idx][y][x] = new_obj
+                        self.items_index_dict[pos_key] = True
+
+                # 判定 B: 道具 ID 没变，仅数量变化 -> 更新数量，保留原 UID
+                elif current_item.count != count:
+                    current_item.count = count
+
+            except (ValueError, IndexError) as e:
+                GameLogManager.log_service_error(f"解析装备数据[{item_raw}]失败=> {e}")
                 continue
-
-            # 内部索引转换：页码从 1 开始转为从 0 开始
-            page_idx = p - 1
-            if not (0 <= page_idx < self.max_page):
-                continue
-
-            pos_key = f"{page_idx}#{y}#{x}"
-            new_positions.add(pos_key)
-
-            current_item = self.items[page_idx][y][x]
-
-            # 判定 A: 该位置为空，或者道具 ID 变了 -> 创建新道具并赋予短 UID
-            if current_item is None or current_item.ID != str(item_id):
-                item_cfg = SourceManager.get_csv("items", str(item_id))
-                if item_cfg:
-                    new_data = copy.deepcopy(item_cfg)
-                    new_data["初始使用次数"] = str(count)
-                    new_data["__pos"] = [page_idx, y, x]
-
-                    # 实例化 Item，确保其内部生成的 UID 长度适中
-                    new_obj = Item(new_data)
-                    self.items[page_idx][y][x] = new_obj
-                    self.items_index_dict[pos_key] = True
-
-            # 判定 B: 道具 ID 没变，仅数量变化 -> 更新数量，保留原 UID
-            elif current_item.count != count:
-                current_item.count = count
 
         # 2. 清理逻辑：如果背包原有位置不在新数据中，视为已被移除
         for index_key in list(self.items_index_dict.keys()):
@@ -1095,7 +1224,61 @@ class GameBag:
                 self.items[pg][iy][ix] = None
                 self.items_index_dict[index_key] = False
 
+        # --- 3. 处理装备栏 ---
+        if equip_raw:
+            for e_str in equip_raw.split("|"):
+                if not e_str: continue
+                e_data = e_str.split(",")
+                if len(e_data) < 5: continue
+
+                slot_key = e_data[0]
+                item_id = e_data[1]
+                p_attr = int(e_data[2])
+                s_attr = int(e_data[3])
+                expire = int(e_data[4])
+
+                # 创建 Item 对象
+                config = SourceManager.get_csv("items", item_id)
+                if config:
+                    config["__pos"] = [-1,-1,-1]
+                    item = Item(config)
+                    item.primary_attr_id = p_attr
+                    item.secondary_attr_id = s_attr
+                    item.expire_time = expire
+                    # 放入装备栏
+                    if slot_key in self.equips:
+                        self.equips[slot_key]["item"] = item
+
+        # 4. 关键：加载完所有东西后，强制刷新玩家属性
+        u_player = self.gm.get("主角")
+        if u_player:
+            u_player.refresh_final_status()
         self.update_blit = True  # 标记需要重绘 UI
+
+    def serialize_equips(self) -> str:
+        """
+        将当前装备栏数据序列化
+        格式: slot_key,id,primary_attr_id,secondary_attr_id,expire_time|...
+        """
+        serialized_equips = []
+        for slot_key, slot_data in self.equips.items():
+            item = slot_data.get("item")
+            if item:
+                # 记录：部位Key, 道具ID, 主属性ID, 副属性ID, 过期时间
+                # 注意：部位Key是字符串(如"头饰"), 道具ID是配置ID
+                equip_str = f"{slot_key},{item.ID},{item.primary_attr_id},{item.secondary_attr_id},{item.expire_time}"
+                serialized_equips.append(equip_str)
+
+        return "|".join(serialized_equips)
+
+    def get_full_save_data(self) -> str:
+        """
+        获取完整的保存字符串（背包 & 装备栏）
+        """
+        bag_str = self.serialize_bag()
+        equip_str = self.serialize_equips()
+        # 使用 & 符号分割
+        return  "&".join([bag_str,equip_str])
 
     def serialize_bag(self) -> str:
         """
@@ -1117,7 +1300,9 @@ class GameBag:
                     # 将页码索引恢复为 1-based (符合 refresh_bag 的逻辑)
                     page_num = page_idx + 1
                     # 拼接单个物品数据
-                    item_str = f"{page_num},{y},{x},{item.ID},{item.count}"
+                    item_str = f"{item.UID},{page_num},{y},{x},{item.ID},{item.count}"
+                    if item.type == 1:
+                        item_str += f",{item.primary_attr_id},{item.secondary_attr_id},{item.expire_time}"
                     serialized_items.append(item_str)
 
         # 使用 | 连接所有物品字符串
