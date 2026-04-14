@@ -32,6 +32,7 @@ from src.system.GameMusic import GameMusicManager
 from src.system.GameTipDialog import GameDialogBoxManager
 from src.system.GameToast import GameToastManager
 from src.system.ShopSystem import ShopSystem
+from src.system.WeatherSystem import WeatherSystem
 
 if TYPE_CHECKING:
     from src.manager.GameCamera import GameCamera
@@ -84,6 +85,9 @@ class GameManager:
     """全局游戏静态类管理映射"""
     shop_system: "ShopSystem" = None
 
+    weather_sys:"WeatherSystem" = None
+    """天气系统"""
+
     __items_need_floor = []
     __items_need_body = []
     __items_need_mask = []
@@ -126,6 +130,9 @@ class GameManager:
         GameDialogBoxManager.Awake(cls)
         BattleManager.Awake(cls)
         FsoMapper.Awake(cls)
+
+        cls.weather_sys = WeatherSystem(cls)
+        cls.add("天气系统", cls.weather_sys)
 
     @classmethod
     def __refresh_layer(cls):
@@ -291,6 +298,17 @@ class GameManager:
         local_y = (int(y) + camera_pos.y)
         return [local_x, local_y]
 
+
+    @classmethod
+    def global_to_scene_pos(cls, x: int, y: int):
+        """世界坐标转为屏幕坐标
+        @return 屏幕的真实坐标
+        """
+        camera_pos = cls.game_camera.get_position()
+        render_x = int(x) - camera_pos.x
+        render_y = int(y) - camera_pos.y
+        return [render_x, render_y]
+
     @classmethod
     def scene_box_to_global_box(cls, x: int, y: int):
         """
@@ -304,14 +322,20 @@ class GameManager:
         global_y = y + camera_pos.y // cls.game_box_size
         return [global_x, global_y]
 
+
     @classmethod
-    def global_to_scene_pos(cls, x: int, y: int):
-        """世界坐标转为屏幕坐标
-        @return 屏幕的真实坐标
+    def world_box_to_scene_pos(cls, gx: int, gy: int):
+        """
+        【推荐使用】将世界网格坐标(gx, gy)直接转为当前屏幕上的像素坐标
         """
         camera_pos = cls.game_camera.get_position()
-        render_x = int(x) - camera_pos.x
-        render_y = int(y) - camera_pos.y
+        # 1. 计算该格子在世界中的绝对像素位置
+        world_pixel_x = gx * cls.game_box_size
+        world_pixel_y = gy * cls.game_box_size
+
+        # 2. 减去相机偏移，得到屏幕上的绘制位置
+        render_x = world_pixel_x - camera_pos.x
+        render_y = world_pixel_y - camera_pos.y
         return [render_x, render_y]
 
     @classmethod

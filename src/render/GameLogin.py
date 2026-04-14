@@ -448,6 +448,9 @@ class GameLogin(SpriteBase):
             self.gm.game_win.blit(self.current_frame, (0, 0))
             self.show_static_bg = False
 
+    def render_mask(self):
+        pass
+
     def render_sticky(self):
         if not self.playing and self.static_bg is not None:
             self.gm.game_win.blit(self.static_bg, (0, 0))

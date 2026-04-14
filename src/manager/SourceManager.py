@@ -9,6 +9,7 @@
 @Date    ：2025/2/13 下午9:29 
 @Describe: 
 """
+import json
 import os
 import sys
 from typing import Dict
@@ -24,6 +25,7 @@ class SourceManager:
     """资源管理器"""
     __source_dict: Dict[str, pygame.Surface] = {}
     __csv_dict: Dict[str, dict] = {}
+    __offset_cfg_dict: Dict[str, list[dict]] = {}
     """ui资源的根目录"""
     ui_root_path = r"Graphics"
     """存放csv的资源"""
@@ -56,6 +58,8 @@ class SourceManager:
     """游戏UI目录"""
     cfg_db_path = r"resources\config\db"
     """游戏本地数据库目录"""
+    cfg_animation_offset_path = r"resources\animation_offset"
+    """游戏精灵偏移值目录"""
     cfg_root_path = "resources"
     """资源包目录"""
 
@@ -72,8 +76,8 @@ class SourceManager:
 
     log_root_path = "logs"
 
-    @staticmethod
-    def Awake():
+    @classmethod
+    def Awake(cls):
         # 如果是生产环境
         game_root = os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -94,6 +98,7 @@ class SourceManager:
         SourceManager.cfg_task_path = os.path.join(game_root, "resources/sv_task")
         SourceManager.cfg_ui_path = os.path.join(game_root, r"resources\language\ui")
         SourceManager.cfg_db_path = os.path.join(game_root, r"resources\config\db")
+        SourceManager.cfg_animation_offset_path = os.path.join(game_root, cls.cfg_animation_offset_path)
 
         SourceManager.cfg_root_path = os.path.join(game_root, "resources")
 
@@ -106,69 +111,59 @@ class SourceManager:
         SourceManager.audio_zfs_source_path = os.path.join(game_root, r"audio\zfsSE")
 
     @staticmethod
-    def load_gif_as_atlas(gif_path, frame_padding=2):
+    def load_gif_as_atlas(gif_path, frame_padding=0):
         """
         将GIF所有帧拼接成单个大Surface（水平排列）
-
         参数:
-            gif_path: GIF文件路径
-            frame_padding: 帧间距（像素）
+        gif_path: GIF文件路径
+        frame_padding: 帧间距（像素）
 
         返回:
-            (surface, frame_rects)
-            - surface: 包含所有帧的PyGame Surface
-            - frame_rects: 每帧在surface中的位置列表[pygame.Rect, ...]
+        (surface, frame_rects)
+        - surface: 包含所有帧的PyGame Surface
+        - frame_rects: 每帧在surface中的位置列表[pygame.Rect, ...]
         """
-        # 1. 读取GIF帧
+        # 1. 读取 GIF
         gif_frames = imageio.mimread(gif_path)
         if not gif_frames:
-            raise ValueError("GIF文件无有效帧")
+            return None
 
-        # 2. 统一帧格式 (RGB, H x W x 3)
-        processed_frames = []
-        max_height = 0
-        total_width = 0
+        # 2. 预计算尺寸 (直接从原始帧获取)
+        # imageio 返回的是 (H, W, C)
+        max_w = max(f.shape[1] for f in gif_frames)
+        max_h = max(f.shape[0] for f in gif_frames)
+        count = len(gif_frames)
 
-        for frame in gif_frames:
-            # 处理通道
-            if len(frame.shape) == 2:  # 灰度图
-                frame = np.stack([frame] * 3, axis=-1)
-            elif frame.shape[2] == 4:  # 带Alpha通道
-                frame = frame[:, :, :3]  # 丢弃Alpha
+        total_width = (max_w + frame_padding) * count - frame_padding
 
-            # 转置为 (height, width, channels)
-            frame = np.transpose(frame, (1, 0, 2))
-            processed_frames.append(frame)
-
-            # 计算最大尺寸
-            max_height = max(max_height, frame.shape[0])
-            total_width += frame.shape[1] + frame_padding
-
-        total_width -= frame_padding  # 去除最后一个padding
-
-        # 3. 创建大Surface
-        atlas_surface = pygame.Surface((total_width, max_height), pygame.SRCALPHA)
+        # 3. 创建大 Surface (保持开启 SRCALPHA)
+        atlas_surface = pygame.Surface((total_width, max_h), pygame.SRCALPHA)
         frame_rects = []
-        x_offset = 0
 
-        # 4. 拼接所有帧
-        for frame in processed_frames:
-            h, w = frame.shape[:2]
+        for i, frame in enumerate(gif_frames):
+            # 处理颜色空间 (imageio 读取的是 RGB 或 RGBA)
+            if frame.shape[2] == 3:
+                # RGB -> RGBA
+                temp_surface = pygame.image.fromstring(frame.tobytes(), (frame.shape[1], frame.shape[0]),
+                                                       'RGB').convert_alpha()
+            else:
+                temp_surface = pygame.image.fromstring(frame.tobytes(), (frame.shape[1], frame.shape[0]),
+                                                       'RGBA').convert_alpha()
 
-            # 转换为PyGame Surface
-            frame_surface = pygame.surfarray.make_surface(frame)
+            # 4. 关键点：统一缩放到最大帧尺寸，防止不贴合
+            if temp_surface.get_size() != (max_w, max_h):
+                temp_surface = pygame.transform.smoothscale(temp_surface, (max_w, max_h))
 
-            # 计算当前帧位置
-            rect = pygame.Rect(x_offset, (max_height - h) // 2, w, h)
-            atlas_surface.blit(frame_surface, rect)
+            x_pos = i * (max_w + frame_padding)
+            # 强制 (x, 0) 起始，不再使用 (max_height - h) // 2
+            rect = pygame.Rect(x_pos, 0, max_w, max_h)
+            atlas_surface.blit(temp_surface, rect)
             frame_rects.append(rect)
-
-            x_offset += w + frame_padding
 
         return {
             "surface": atlas_surface,
             "rects": frame_rects,
-            "len": len(processed_frames)
+            "len": count
         }
 
     @staticmethod
@@ -192,26 +187,26 @@ class SourceManager:
                 SourceManager.__source_dict[file_path] = pygame.image.load(root_path).convert_alpha()
             elif file_name.lower().endswith(".jpg"):
                 SourceManager.__source_dict[file_path] = pygame.image.load(root_path)
+
+
             elif file_name.lower().endswith(".gif"):
                 sur = SourceManager.load_gif_as_atlas(root_path)
+
                 if scale:
-                    sur["surface"] = SourceManager.ssurface_scale(sur.get("surface"), scale)
-                    # 2. 重新计算每一帧的宽度 (关键：直接平分)
-                    total_w = sur["surface"].get_width()
-                    total_h = sur["surface"].get_height()
+                    target_w, target_h = scale[0], scale[1]
                     frame_count = sur.get("len")
+                    # 2. 重新计算总宽度，确保不丢失精度
+                    total_scale_w = target_w * frame_count
+                    sur["surface"] = SourceManager.ssurface_scale(sur.get("surface"), [total_scale_w, target_h])
 
-                    # 单帧宽度 = 总宽 / 帧数 (这里可能包含 padding 的缩放，但因为是平分，所以绝对不会越界)
-                    frame_w = total_w // frame_count
-
+                    # 因为旧 rects 包含了居中偏移量，我们要的是铺满整个 target_h
                     new_rects = []
                     for i in range(frame_count):
-                        # 这里的坐标计算保证了 max(left + width) <= total_w
-                        rect = pygame.Rect(i * frame_w, 0, frame_w, total_h)
+                        # 严格平分，起始点从 0 开始，高度填满 target_h
+                        rect = pygame.Rect(i * target_w, 0, target_w, target_h)
                         new_rects.append(rect)
-
+                        curr_skill_bg = sur["surface"].subsurface(rect)
                     sur["rects"] = new_rects
-
                 return sur
             else:
                 raise Exception(f"暂不支持的文件类型,{file_name.split(".").pop()}")
@@ -286,7 +281,7 @@ class SourceManager:
         """平滑的将surface缩放到任意大小"""
         if surface is None:
             return surface
-        return pygame.transform.smoothscale(surface, size)
+        return pygame.transform.smoothscale(surface, tuple(size))
 
     @staticmethod
     def create_surface_mask(surface: pygame.Surface):
@@ -303,3 +298,23 @@ class SourceManager:
         sur = surface.copy()
         sur.set_alpha(alpha)
         return sur
+
+    @classmethod
+    def load_sprite_offset_config(cls, name: str):
+        """
+        返回指定精灵的偏移配置参数
+        :param name:
+        :return:
+        """
+        data = cls.__offset_cfg_dict.get(name)
+        if data:
+            return data
+        base_dir = os.path.join(cls.cfg_animation_offset_path, f"{name}.json")
+        if not os.path.exists(base_dir):
+            return None
+        with open(base_dir, "r", encoding="utf-8") as f:
+            jsonc = json.load(f)
+            # 提前转换一下, 逻辑直接用
+            da = [{"offX": int(curr["offX"]), "offY": int(curr["offY"])} for curr in jsonc.get("frames", [])]
+            cls.__offset_cfg_dict[name] = da
+            return da

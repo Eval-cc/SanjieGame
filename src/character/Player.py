@@ -27,6 +27,7 @@ from src.manager.GameFont import GameFont
 from src.manager.GameManager import GameManager
 from src.manager.SourceManager import SourceManager
 from src.code.Enums import SpriteState
+from src.system.GameDialog import GameDialog
 from src.system.GameTipDialog import GameDialogBoxManager
 
 if TYPE_CHECKING:
@@ -136,8 +137,8 @@ class Player(SpriteBase):
                 "name": "退出",
                 "source": "exp_9-91486",
                 "loc": (65, 10),
-                "frames": [215, 0, 30, 40],
-                "frames1": [230, 0, 30, 40]
+                "frames": [209, 0, 30, 40],
+                "frames1": [225, 0, 30, 40]
             }
         ]
         self.__extract_frames_from_sprite()
@@ -207,22 +208,26 @@ class Player(SpriteBase):
                                    # "has_draw": True
                                })
 
-        skill_bg = SourceManager.load(f"{SourceManager.ui_system_path}/none_window.png", [600, 400])
-        game_ui.load_system_ui(skill_bg,
-                               [600, 400],
-                               "middle",
-                               options=
-                               {
-                                   "name": "角色技能",
-                                   "mouse_down": self.__click_status_ui,
-                                   "drag": True,
-                                   "event_layer": 5,
-                                   "drag_rect": ["auto", "auto", "auto", "20"],
-                                   "update_blit": self.__update_blit,
-                                   "listen_keyboard": lambda: game_ui.get_surface_show("角色技能")
-                               }, sort=True)
-        self.skill_bg_gif = SourceManager.load(f"{SourceManager.ui_system_path}/dt_bg.gif", skill_bg.get_rect().size)
+        # skill_bg = SourceManager.load(f"{SourceManager.ui_system_path}/none_window.png", [600, 400])
+        # game_ui.load_system_ui(skill_bg,
+        #                        [600, 400],
+        #                        "middle",
+        #                        options=
+        #                        {
+        #                            "name": "角色技能",
+        #                            "mouse_down": self.__click_status_ui,
+        #                            "drag": True,
+        #                            "event_layer": 5,
+        #                            "drag_rect": ["auto", "auto", "auto", "20"],
+        #                            "update_blit": self.__update_blit,
+        #                            "listen_keyboard": lambda: game_ui.get_surface_show("角色技能")
+        #                        }, sort=True)
+        # _rect = list(skill_bg.get_rect().size)
+        # _rect[1] -= 20
+        # self.skill_bg_gif = SourceManager.load(f"{SourceManager.ui_system_path}/dt_bg.gif", _rect)
+        self.skill_bg_gif = None
         self.skill_bg_gif_idx = 0
+        self.skill_anim_timer = 0
 
     def __init_status(self, data: dict):
         try:
@@ -463,8 +468,8 @@ class Player(SpriteBase):
         self.move()
         camera_pos = GameManager.game_camera.get_position()
 
-        render_x = self.transform.x - camera_pos.x - self.rect.width / 2  # - (self.rect.width / 2)
-        render_y = self.transform.y - camera_pos.y - self.rect.height  # - (self.rect.height / 2)
+        render_x = self.transform.x - camera_pos.x
+        render_y = self.transform.y - camera_pos.y
         self.rect.x = render_x
         self.rect.y = render_y
 
@@ -473,56 +478,73 @@ class Player(SpriteBase):
         # 更新动画
         self.animator.update(0.5)  # 以 60fps 作为基准
 
+        x_off = -(self.rect.width / 2)
+        y_off = -self.rect.height
+        if len(self.stand_offset) > 0:
+            ani_idx = self.animator.get_current_frame_absolute_index()
+            if len(self.stand_offset) > ani_idx:
+                x_off = self.stand_offset[ani_idx]["offX"]
+                y_off = self.stand_offset[ani_idx]["offY"]
         # 使用Animator获取当前帧
         current_frame = self.animator.get_frame()
         if current_frame:
-            # 使用统一的偏移量进行渲染
-            GameManager.game_win.blit(current_frame, (render_x + self.stand_offset[0], render_y + self.stand_offset[1]))
+            GameManager.game_win.blit(current_frame, (render_x + x_off, render_y + y_off))
 
+        # 角色边框
         if GameManager.has_debug_render:
-            pygame.draw.rect(GameManager.game_win, (220, 220, 220), (
-                render_x, render_y,
-                self.rect.width, self.rect.height
-            ), 1)
-
-    def render_mask(self):
-        camera_pos = GameManager.game_camera.get_position()
-        render_x = self.transform.x - camera_pos.x - (self.width / 2)
-        render_y = self.transform.y - camera_pos.y - (self.height / 2)
-        # 渲染人物名字
-        GameFont.render_line_text(self.name,
-                                  int(self.rect.x + self.stand_offset[0] + self.rect.width / 2 -
-                                      self.name_width / 2),
-                                  self.rect.y - 10 + self.stand_offset[1], True)
-
-        if self.eff_animator_stick:
-            self.eff_animator_stick.update(0.3, True)
-
-        if GameManager.has_debug_render:
-            # 绘制路径点和连接线
-            previous_pos = None
-            for pos in self.current_path:
-                local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
-                # 画点
-                pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
-                # 画线（连接前一个点到当前点）
-                if previous_pos is not None:
-                    pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
-                previous_pos = (local_x + 5, local_y + 5)
-
-            # 绘制人物的边框
-            pygame.draw.rect(GameManager.game_win, (255, 255, 250), (render_x, render_y, self.width, self.height), 1)
-            # 脚底的红点
-            pygame.draw.rect(GameManager.game_win, (200, 20, 20), [int(render_x + self.width / 2),
-                                                                   render_y + (self.height / 2), 10, 10], 0,
-                             border_radius=5)
-        # 渲染血条
-        if BattleManager.battle_sta():
             pygame.draw.rect(GameManager.game_win, (100, 220, 100),
-                             (self.rect.x + self.rect.width // 2 - 25, self.rect.y + 10, 50, 5), 1)
-            pygame.draw.rect(GameManager.game_win, (255, 10, 10),
-                             (self.rect.x + self.rect.width // 2 - 25, self.rect.y + 11,
-                              int(50 * self.healthy / self.max_healthy), 3), 0)
+                             (
+                                 self.rect.x - self.rect.width // 2, render_y - self.rect.height,
+                                 self.rect.width, self.rect.height
+                             )
+                             , 1)
+    #
+    # def render_mask(self):
+    #     # camera_pos = GameManager.game_camera.get_position()
+    #     # render_x = self.transform.x - camera_pos.x # - (self.width / 2)
+    #     # render_y = self.transform.y - camera_pos.y # - (self.height / 2)
+    #     render_x = self.rect.x
+    #     render_y = self.rect.y
+    #     # 渲染人物名字
+    #     # x_off = -(self.rect.width / 2)
+    #     # y_off = -self.rect.height
+    #     # if len(self.stand_offset) > 0:
+    #     #     ani_idx = self.animator.get_current_frame_absolute_index()
+    #     #     if len(self.stand_offset) > ani_idx:
+    #     #         x_off = int(self.stand_offset[ani_idx]["offX"])
+    #     #         y_off = int(self.stand_offset[ani_idx]["offY"])
+    #     GameFont.render_line_text(self.name,
+    #                               int(self.rect.x + self.rect.width / 2 -
+    #                                   self.name_width / 2),
+    #                               self.rect.y - 10, True)
+    #
+    #     if self.eff_animator_stick:
+    #         self.eff_animator_stick.update(0.3, True)
+    #
+    #     if GameManager.has_debug_render:
+    #         # 绘制路径点和连接线
+    #         previous_pos = None
+    #         for pos in self.current_path:
+    #             local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
+    #             # 画点
+    #             pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
+    #             # 画线（连接前一个点到当前点）
+    #             if previous_pos is not None:
+    #                 pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
+    #             previous_pos = (local_x + 5, local_y + 5)
+    #
+    #         # 绘制人物的边框
+    #         pygame.draw.rect(GameManager.game_win, (255, 255, 250), (render_x, render_y, self.width, self.height), 1)
+    #         # 脚底的红点
+    #         pygame.draw.rect(GameManager.game_win, (200, 20, 20), [render_x, render_y, 10, 10], 0,
+    #                          border_radius=5)
+    #     # 渲染血条
+    #     if BattleManager.battle_sta():
+    #         pygame.draw.rect(GameManager.game_win, (100, 220, 100),
+    #                          (self.rect.x + self.rect.width // 2 - 25, self.rect.y + 10, 50, 5), 1)
+    #         pygame.draw.rect(GameManager.game_win, (255, 10, 10),
+    #                          (self.rect.x + self.rect.width // 2 - 25, self.rect.y + 11,
+    #                           int(50 * self.healthy / self.max_healthy), 3), 0)
 
     def move(self):
         if self.sprite_state == SpriteState.ATTACK or BattleManager.battle_sta():
@@ -666,17 +688,24 @@ class Player(SpriteBase):
                     sur.blit(GameFont.get_text_surface_line("0", True), STATUS_POS[k])
             game_ui.set_surface_ui("角色属性", sur)
 
-        if game_ui.get_surface_show("角色技能"):
-            self.skill_bg_gif_idx = (self.skill_bg_gif_idx + 1) % self.skill_bg_gif.get("len")
-            if self.skill_bg_gif_idx == 0:
-                self.skill_bg_gif_idx = 0
-            skill_sur = game_ui.get_surface_ui("角色技能")
+        # if game_ui.get_surface_show("角色技能"):
+            # 频率控制：假设游戏 60 帧，每 5 帧更新一次 GIF（约 12FPS）
+            # self.skill_anim_timer += 1
+            # if self.skill_anim_timer >= 5:
+            #     self.skill_anim_timer = 0
+            #     self.skill_bg_gif_idx = (self.skill_bg_gif_idx + 1) % self.skill_bg_gif.get("len")
 
-            curr_rect = self.skill_bg_gif.get("rects")[self.skill_bg_gif_idx]
-            curr_skill_bg = self.skill_bg_gif.get("surface").subsurface(curr_rect)
-            skill_sur.blit(curr_skill_bg, (0, 0))
-            self.update_blit = True
-            game_ui.set_surface_ui("角色技能", skill_sur)
+            # skill_sur = game_ui.get_surface_ui("角色技能")
+            # curr_rect = self.skill_bg_gif.get("rects")[self.skill_bg_gif_idx]
+            #
+            # # 关键修复：subsurface 之前确保不越界（上面 SourceManager 修复后这里通常没问题）
+            # curr_skill_bg = self.skill_bg_gif.get("surface").subsurface(curr_rect)
+            #
+            # skill_sur.blit(curr_skill_bg, (0, 20))
+            #
+            # # 这一行很重要：保持 update_blit 为 True 才能形成连续动画
+            # self.update_blit = True
+            # game_ui.set_surface_ui("角色技能", skill_sur)
 
         game_ui.set_surface_ui("功能区", fun_tool_sur)
 
@@ -763,8 +792,39 @@ class Player(SpriteBase):
                 else:
                     GameManager.logout()
             case "技能":
-                game_ui.change_ui_layer("角色技能")
-                return
+                dl = GameDialog(GameManager, "游戏技能UI")
+                dl.show_dialog(SourceManager.cfg_ui_path + "/game_skills.html",
+                               render_x=0,
+                               render_y=0,
+                               overwrite_path=True,
+                               # dialog_event_dict={
+                               #     "login": on_button_click,
+                               #     "unline": on_button_click_offline
+                               # },
+                               # loc="right_center"
+                               )
+                # if self.skill_bg_gif is None:
+                #     skill_bg = SourceManager.load(f"{SourceManager.ui_system_path}/none_window.png", [600, 400])
+                #     game_ui.load_system_ui(skill_bg,
+                #                            [600, 400],
+                #                            "middle",
+                #                            options=
+                #                            {
+                #                                "name": "角色技能",
+                #                                "mouse_down": self.__click_status_ui,
+                #                                "drag": True,
+                #                                "event_layer": 5,
+                #                                "drag_rect": ["auto", "auto", "auto", "20"],
+                #                                "update_blit": self.__update_blit,
+                #                                "listen_keyboard": lambda: game_ui.get_surface_show("角色技能")
+                #                            }, sort=True)
+                #     _rect = list(skill_bg.get_rect().size)
+                #     _rect[1] -= 20
+                #     self.skill_bg_gif = SourceManager.load(f"{SourceManager.ui_system_path}/dt_bg.gif", _rect)
+                # game_ui.change_ui_layer("角色技能")
+                # if not game_ui.get_surface_show("角色技能"):
+                #     self.skill_bg_gif = None
+                # return
             case _:
                 GameLogManager.log_service_error(f"无法识别的指令: {cbk_name}")
 

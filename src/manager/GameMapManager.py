@@ -267,6 +267,8 @@ class GameMapManager:
         cls.__passable.clear()
         # 清空遮罩
         cls.__map_mask.clear()
+
+        GameManager.weather_sys.setWeather("rain")
         try:
             with open(map_path + "/passable.txt", "r") as f:
                 map_pass_list = f.read().split("\n")

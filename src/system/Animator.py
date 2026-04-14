@@ -123,6 +123,8 @@ class Animator:
         self.render_pos = []  # 渲染位置
 
         self.show_frame_text = False # 是否显示帧的调试文本
+        self.total_cols = 0  # 原始图片的总列数
+        self.curr_direction_row = 0  # 当前动作/方向所在的起始行
 
     def get_dir(self, anim_dir: str = None):
         """
@@ -168,6 +170,7 @@ class Animator:
         frames = []
         calc_x = 0
         calc_y = 0
+        self.total_cols = frame_column  # 记录总列数
 
         for frame_index in range(frame_total):
             if frame_index > 0 and frame_index % frame_column == 0:
@@ -401,6 +404,29 @@ class Animator:
             return None
         clip = self.clips[self.current]
         return int(self.time * clip.fps) % len(clip.frames)
+
+    def get_current_frame_absolute_index(self) -> int:
+        """
+        获取当前帧在原图中的绝对索引 (从0开始计算)
+        计算公式: (当前行 * 总列数) + 当前帧在当前行的索引
+        """
+        if not self.current:
+            return 0
+
+        # 获取当前动画片段内部的帧索引 (比如 0, 1, 2, 3...)
+        current_clip_idx = self.get_frame_index()
+
+        # 如果你的动画命名规则包含方向索引 (例如 "run_0", "run_1")
+        # 我们可以通过名称提取出它是第几行
+        try:
+            # 假设名称格式为 "动作名_行号"
+            row_index = int(self.current.split('_')[-1])
+        except (ValueError, IndexError):
+            row_index = 0
+
+        # 返回绝对索引：行索引 * 总列数 + 当前帧
+        # 比如 5x5 的图，第二行(row=1)第一帧(idx=0) -> 1 * 5 + 0 = 5
+        return (row_index * self.total_cols) + current_clip_idx
 
     def is_last_index(self) -> Optional[int]:
         """ 是否是最后一帧 """

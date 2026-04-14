@@ -1262,7 +1262,7 @@ class GameBag:
         """
         serialized_equips = []
         for slot_key, slot_data in self.equips.items():
-            item = slot_data.get("item")
+            item:Item = slot_data.get("item")
             if item:
                 # 记录：部位Key, 道具ID, 主属性ID, 副属性ID, 过期时间
                 # 注意：部位Key是字符串(如"头饰"), 道具ID是配置ID

@@ -105,8 +105,9 @@ class GameDialog:
                 GameLogManager.log_service_debug(f"非法的对话文件")
                 return
             width, height = result.get('attrs').get("width"), result.get('attrs').get("height")
-            # 此属性控制是否再标题栏显示关闭按钮
-            has_close = result.get('close', "false") == "true"
+            _has_bg = len(result.get('attrs',{}).get("background-image","")) > 0 # 是否有背景
+            # 此属性控制是否允许关闭改UI, 以及 标题栏显示关闭按钮
+            self.has_close = result.get('attrs',{}).get('close', "false") == "true"
             if bool(width) ^ bool(height):
                 GameToastManager.add_message(f"非法的对话文件")
                 GameLogManager.log_service_debug(f"非法的对话文件")
@@ -130,9 +131,11 @@ class GameDialog:
                 dialog_sur = pygame.Surface((int(width), int(height)), pygame.SRCALPHA)
                 dialog_sur.fill((0, 0, 0, 0))
                 dialog_sur.blit(self.dialog_title, (2, 0))
-                dialog_sur.blit(dialog_bg, (0, 30))
-                pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
-                                 (0, 30, int(width), int(height) - 30), 1)
+                # 有背景图片就不显示默认的边框了
+                if not _has_bg:
+                    dialog_sur.blit(dialog_bg, (0, 30))
+                    pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
+                                     (0, 30, int(width), int(height) - 30), 1)
 
                 game_ui.load_system_ui(
                     f"{SourceManager.ui_system_path}/ui-button.png",
@@ -172,7 +175,7 @@ class GameDialog:
                                                           # "item_event": None,
                                                           # "item_hover_event": None,
                                                           "update_blit": self.__update_blit,
-                                                          "listen_keyboard": lambda: True,
+                                                          "listen_keyboard": lambda: self.has_close,
                                                           "hide_callback": self.__hide_callback
                                                           # "un_allow": True  # 显示此UI的时候 禁止其他操作, 除了另一个UI
                                                       }, sort=True)
@@ -182,7 +185,8 @@ class GameDialog:
                 dialog_sur = pygame.Surface((int(width), int(height)), pygame.SRCALPHA)
                 dialog_sur.blit(self.dialog_title, (2, 0))
                 dialog_sur.blit(dialog_bg, (0, 30))
-
+                if self.rect is None:
+                    self.rect = dialog_sur.get_rect()
                 self.rect.width = int(width)
                 self.rect.height = int(height)
 
@@ -405,6 +409,8 @@ class GameDialog:
             return
 
     def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        if not self.has_close:
+            return
         if self.__focus_node:
             _com = self._alone_component.get(self.__focus_node.get("target"))
             if _com and hasattr(_com, "key_down"):
@@ -559,6 +565,8 @@ class GameDialog:
                 _cbg_h = max(int(_attr.get("height", "0")) - __el_padding[2], 0)
                 cbg_sur = SourceManager.load(cbg_path)
                 if cbg_sur:
+                    if type(cbg_sur) == dict:
+                        cbg_sur = cbg_sur.get("surface")
                     if clip_path:
                         clip_path_arr = [int(i) for i in clip_path.split(" ")]
                         clip_x = 0 if clip_path_arr[0] == -1 else clip_path_arr[0]
@@ -566,18 +574,29 @@ class GameDialog:
                         clip_w = cbg_sur.width if clip_path_arr[2] == -1 else clip_path_arr[2]
                         clip_h = cbg_sur.height if clip_path_arr[3] == -1 else clip_path_arr[3]
                         cbg_sur = cbg_sur.subsurface((clip_x, clip_y, clip_w - clip_x, clip_h - clip_y))
-                    if _cbg_w > 0 and _cbg_h > 0:
-                        cbg_sur = SourceManager.ssurface_scale(cbg_sur, [_cbg_w, _cbg_h])
-                    else:
-                        _cbg_w, _cbg_h = cbg_sur.get_size()
-                    if dom_id == "app":  # 根节点不跟随滚动.
+
+                    if dom_id == "app":
+                        # 获取容器设定的宽高
+                        container_w = int(_attr.get("width", "0"))
+                        container_h = int(_attr.get("height", "0"))
+                        # 如果是根节点，强制缩放到对话框主体区域大小（宽, 高-30）
+                        target_size = (container_w, container_h - 30)
+                        cbg_sur = pygame.transform.smoothscale(cbg_sur, target_size)
                         dialog_sur.blit(cbg_sur, (0, 30))
+                        _cbg_w, _cbg_h = target_size
                     else:
-                        if _ax is None:
-                            _ax = render_x
-                        if _ay is None:
-                            _ay = render_y
-                        self.blit_with_clipping(dialog_sur, cbg_sur, _ax, _ay, view_height)
+                        if _cbg_w > 0 and _cbg_h > 0:
+                            cbg_sur = SourceManager.ssurface_scale(cbg_sur, [_cbg_w, _cbg_h])
+                        else:
+                            _cbg_w, _cbg_h = cbg_sur.get_size()
+                        if dom_id == "app":  # 根节点不跟随滚动.
+                            dialog_sur.blit(cbg_sur, (0, 30))
+                        else:
+                            if _ax is None:
+                                _ax = render_x
+                            if _ay is None:
+                                _ay = render_y
+                            self.blit_with_clipping(dialog_sur, cbg_sur, _ax, _ay, view_height)
                         # dialog_sur.blit(cbg_sur, (render_x, render_y))
                         curr_style["background-color"] = None  # 优先背景图片
                 return _cbg_w, _cbg_h

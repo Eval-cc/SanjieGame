@@ -70,6 +70,7 @@ class Item(SpriteBase):
 
     def __init__(self, item_data: dict):
         super().__init__()
+        self.UID = f"-{self.UID}"
         self.ID: str = ""  # 道具ID
         self.name: str = ""  # 道具名称
         self.stage: int = 0  # 阶段
@@ -344,5 +345,5 @@ class Item(SpriteBase):
     def clone(self):
         """返回当前道具的克隆对象"""
         clone_item = deepcopy(self)
-        clone_item.UID = uuid4().hex[:8]  # 道具的唯一id
+        clone_item.UID = f"-{uuid4().hex[:8]}"  # 道具的唯一id
         return clone_item

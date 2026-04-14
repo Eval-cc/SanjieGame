@@ -9,7 +9,6 @@
 @Date    ：2025/6/14 20:49
 @Describe:
 """
-
 import random
 import time
 from typing import List, Dict
@@ -22,7 +21,6 @@ from src.manager.GameMapManager import GameMapManager
 from src.necessary.GameBattle import BattleManager
 from src.system.Animator import Animator
 from src.code.SpriteBase import SpriteBase
-from src.manager.GameFont import GameFont
 from src.manager.GameManager import GameManager
 from src.manager.SourceManager import SourceManager
 from src.code.Enums import SpriteState, SpriteLayer
@@ -57,7 +55,6 @@ class NpcSprite(SpriteBase):
         # 重置下一次移动的时间
         self.random_move_timer = 0
 
-        self.range_rect: pygame.Rect = None
         # 单帧宽度
         self.frame_width = 0
         self.frame_timer = 0
@@ -146,27 +143,20 @@ class NpcSprite(SpriteBase):
                 fw *= self.scale_texture
                 fh *= self.scale_texture
 
-            # 遍历每个方向
+            first_frame = image.subsurface((0, 0, fw, fh))
+            self.rect = first_frame.get_bounding_rect()
+
             for _dir_idx, dir_val in enumerate(directions):
                 d_idx = dir_val - 1
                 if d_idx >= rows:
                     continue
-                # 自动忽略透明像素
-                first_frame = image.subsurface((0, _dir_idx * fh, fw, fh))
-                self.rect = first_frame.get_bounding_rect()
-                # 保存为检查NPC范围的Rect, 用于检查触发点击 或者 主角是否超出了NPC的这个范围
-                self.range_rect = pygame.Rect(self.rect.x - 30, self.rect.y - 30, self.rect.width + 60,
-                                              self.rect.height + 60)
-                base_offset_x = self.rect.x
-                base_offset_y = self.rect.y
-
-                # 遍历每一列
+                # # 遍历每一列
                 frames_by_dir[d_idx] = [
                     image.subsurface((
-                        col * fw + base_offset_x,  # 使用基准偏移量
-                        d_idx * fh + base_offset_y,  # 使用基准偏移量
-                        self.rect.width,  # 使用bounding rect的宽度
-                        self.rect.height  # 使用bounding rect的高度
+                        col * fw,  # 使用基准偏移量
+                        d_idx * fh,  # 使用基准偏移量
+                        fw,  # 使用bounding rect的宽度
+                        fh  # 使用bounding rect的高度
                     ))
                     for col in range(cols)
                 ]
@@ -202,14 +192,11 @@ class NpcSprite(SpriteBase):
     def render(self):
         self.move()
         camera_pos = GameManager.game_camera.get_position()
-        render_x = self.transform.x - camera_pos.x - self.rect.width / 2
-        render_y = self.transform.y - camera_pos.y - self.rect.height
+        render_x = self.transform.x - camera_pos.x
+        render_y = self.transform.y - camera_pos.y
         # ui相关的坐标, 如:名称
         self.rect.x = render_x
         self.rect.y = render_y
-        # 矩形的坐标
-        self.range_rect.x = self.transform.x - camera_pos.x - self.range_rect.width / 2
-        self.range_rect.y = self.transform.y - camera_pos.y - self.range_rect.height
         # 如果当前有挑战的NPC
         if BattleManager.battle_sta() and self.sprite_state != SpriteState.ATTACK and self.sprite_state != SpriteState.DEAD:
             return
@@ -234,78 +221,101 @@ class NpcSprite(SpriteBase):
         # # 渲染背景特效
         # self.eff_animator_floor.render(cpos[0], cpos[1] + 20, center=True)
         #
+
+        x_off = -(self.rect.width / 2)
+        y_off = - self.rect.height
+        if len(self.stand_offset) > 0:
+            ani_idx = self.animator.get_current_frame_absolute_index()
+            if len(self.stand_offset) > ani_idx:
+                x_off = self.stand_offset[ani_idx]["offX"]
+                y_off = self.stand_offset[ani_idx]["offY"]
         # 渲染精灵
         current_frame = self.animator.get_frame()
         if current_frame and not self.has_behind:
-            # 使用统一的偏移量进行渲染
-            GameManager.game_win.blit(current_frame, (render_x, render_y))
+            GameManager.game_win.blit(current_frame, (render_x + x_off, render_y + y_off))
 
         if GameManager.has_debug_render:
-            pygame.draw.rect(GameManager.game_win, (220, 220, 220), (
-                render_x, render_y,
-                self.rect.width, self.rect.height
-            ), 1)
-            pygame.draw.rect(GameManager.game_win, (100, 220, 100), self.range_rect, 1)
-
-    def render_mask(self):
-        self.eff_animator_stick.update(0.5, True)
-        # 如果当前有挑战的NPC
-        if BattleManager.battle_sta() and not self.battle_state:
-            return
-
-        if self.rect.x < 0 or self.rect.y < 0:
-            return
-
-        view_width = GameManager.game_win_rect.width
-        view_height = GameManager.game_win_rect.height
-        if self.rect.x > view_width or self.rect.y > view_height:
-            return
-        render_x = self.rect.x
-        render_y = self.rect.y
-
-        if self.has_behind:
-            # 渲染精灵
-            current_frame = self.animator.get_frame()
-            if current_frame:
-                # 使用统一的偏移量进行渲染
-                a = current_frame.copy()
-                a.set_alpha(150)
-                GameManager.game_win.blit(a, (render_x, render_y))
-
-        # 绘制路径点和连接线
-        if GameManager.has_debug_render:
-            previous_pos = None
-            for pos in self.current_path:
-                local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
-                # 画点
-                pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
-                # 画线（连接前一个点到当前点）
-                if previous_pos is not None:
-                    pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
-                previous_pos = (local_x + 5, local_y + 5)
-
-        GameFont.render_line_text(f"{self.name}",
-                                  max(
-                                      10,
-                                      int(render_x + self.rect.width / 2 - GameFont.get_text_size(f"{self.name}")[
-                                          0] / 2)
-                                  ),
-                                  max(
-                                      10,
-                                      render_y - 10
-                                  ), True,
-                                  font_color="#FF7F24")
-
-        # 渲染血条
-        if self.battle_state and self.sprite_state != SpriteState.DEAD:
+            # pygame.draw.rect(GameManager.game_win, (100, 220, 100), (
+            #     render_x + x_off, render_y + y_off,
+            #     self.rect.width, self.rect.height
+            # ), 1)
             pygame.draw.rect(GameManager.game_win, (100, 220, 100),
-                             (self.range_rect.x + self.range_rect.width // 2 - 25, render_y + 4, 50, 5), 1)
-            pygame.draw.rect(GameManager.game_win, (255, 10, 10),
-                             (self.range_rect.x + self.range_rect.width // 2 - 25, render_y + 5,
-                              int(50 * self.healthy / self.max_healthy), 3), 0)
+                             (
+                                 self.rect.x - self.rect.width // 2, render_y - self.rect.height,
+                                 self.rect.width, self.rect.height
+                             )
+                             , 1)
+
+    # def render_mask(self):
+    #     self.eff_animator_stick.update(0.5, True)
+    #     # 如果当前有挑战的NPC
+    #     if BattleManager.battle_sta() and not self.battle_state:
+    #         return
+    #
+    #     if self.rect.x < 0 or self.rect.y < 0:
+    #         return
+    #
+    #     view_width = GameManager.game_win_rect.width
+    #     view_height = GameManager.game_win_rect.height
+    #     if self.rect.x > view_width or self.rect.y > view_height:
+    #         return
+    #     render_x = self.rect.x
+    #     render_y = self.rect.y
+    #
+    #     # 使用统一的偏移量进行渲染
+    #     x_off = -(self.rect.width / 2)
+    #     y_off = - self.rect.height
+    #     if len(self.stand_offset) > 0:
+    #         ani_idx = self.animator.get_current_frame_absolute_index()
+    #         if len(self.stand_offset) > ani_idx:
+    #             x_off = int(self.stand_offset[ani_idx]["offX"])
+    #             y_off = int(self.stand_offset[ani_idx]["offY"])
+    #     if self.has_behind:
+    #         # 渲染精灵
+    #         current_frame = self.animator.get_frame()
+    #         if current_frame:
+    #             a = current_frame.copy()
+    #             a.set_alpha(150)
+    #             GameManager.game_win.blit(a, (render_x + x_off, render_y + y_off))
+    #
+    #     # 绘制路径点和连接线
+    #     if GameManager.has_debug_render:
+    #         previous_pos = None
+    #         for pos in self.current_path:
+    #             local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
+    #             # 画点
+    #             pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
+    #             # 画线（连接前一个点到当前点）
+    #             if previous_pos is not None:
+    #                 pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
+    #             previous_pos = (local_x + 5, local_y + 5)
+    #
+    #         # 基点
+    #         pygame.draw.rect(GameManager.game_win, (250, 0, 0), (render_x, render_y, 10, 10), 0)
+    #
+    #     # 绘制名称
+    #     GameFont.render_line_text(f"{self.name}",
+    #                               max(
+    #                                   10,
+    #                                   int(render_x + self.rect.width / 2 - GameFont.get_text_size(f"{self.name}")[
+    #                                       0] / 2)
+    #                               ),
+    #                               max(
+    #                                   10,
+    #                                   render_y - 10
+    #                               ), True,
+    #                               font_color="#FF7F24")
+    #
+    #     # 渲染血条
+    #     if self.battle_state and self.sprite_state != SpriteState.DEAD:
+    #         pygame.draw.rect(GameManager.game_win, (100, 220, 100),
+    #                          (self.rect.x + self.rect.width // 2 - 25, render_y + 4, 50, 5), 1)
+    #         pygame.draw.rect(GameManager.game_win, (255, 10, 10),
+    #                          (self.rect.x + self.rect.width // 2 - 25, render_y + 5,
+    #                           int(50 * self.healthy / self.max_healthy), 3), 0)
 
     def move(self):
-        """根据路径数组移动角色（修复坐标体系 + 播放动画）"""
+        """根据路径数组移动角色"""
         if self.battle_state:
             return
 
@@ -399,7 +409,7 @@ class NpcSprite(SpriteBase):
             camera_pos = GameManager.game_camera.get_position()
             px = play_pos[0] - camera_pos.x
             py = play_pos[1] - camera_pos.y
-            if self.range_rect.collidepoint(px, py):
+            if self.rect.collidepoint(px, py):
                 # print(f"碰到了:{self.name}")
                 # 获取玩家脚部位置（通常是玩家坐标的底部）
                 player_foot_y = play_pos[1] + play_pos[3]  # 假设height是精灵高度
@@ -428,12 +438,13 @@ class NpcSprite(SpriteBase):
     def has_clicked_condition(self, target=None):
         if BattleManager.battle_sta() and self.sprite_state == SpriteState.ATTACK:
             # 如果是攻击状态, 那就判断鼠标是否位于这个位置
-            if self.rect.collidepoint(pygame.mouse.get_pos()):
+            _x, _y = pygame.mouse.get_pos()
+            if self.rect.collidepoint(_x, _y):
                 return True
             return False
 
         # 计算实际交互距离
-        return self.range_rect.colliderect(GameManager.get("主角").rect)
+        return self.rect.colliderect(GameManager.get("主角").rect)
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if BattleManager.battle_sta():

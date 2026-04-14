@@ -12,6 +12,7 @@
 import math
 import random
 import time
+from importlib.util import source_hash
 from pathlib import Path
 from typing import Dict, TYPE_CHECKING
 from uuid import uuid4
@@ -107,6 +108,8 @@ class SpriteBase:
         """存放战斗相关的配置"""
         self.raw_angle: int = 0  # 保存原始计算角度（0-360度）
         """原始计算角度"""
+        self.has_behind = False
+        """是否背对玩家"""
 
         self.stand_model: list = [0, 0]
         self.move_model: list = [0, 0]
@@ -117,8 +120,8 @@ class SpriteBase:
 
         self.battle_texture = ""
         self.scale_texture = 1
-        self.stand_offset = [0, 0]
-        self.move_offset = [0, 0]
+        self.stand_offset = []
+        self.move_offset = []
         # 单帧宽度
         self.frame_width: int = 0
         self.frame_timer: int = 0
@@ -189,7 +192,80 @@ class SpriteBase:
 
     def render_mask(self):
         """遮罩层"""
-        pass
+        if self.rect is None: return
+        from src.manager.GameManager import GameManager
+        from src.necessary.GameBattle import BattleManager
+
+        if self.eff_animator_stick:
+            self.eff_animator_stick.update(0.5, True)
+        # 如果当前有挑战的NPC
+        if BattleManager.battle_sta() and not self.battle_state:
+            return
+
+        if self.rect.x < 0 or self.rect.y < 0:
+            return
+
+        view_width = GameManager.game_win_rect.width
+        view_height = GameManager.game_win_rect.height
+        if self.rect.x > view_width or self.rect.y > view_height:
+            return
+        render_x = self.rect.x
+        render_y = self.rect.y
+
+        # 使用统一的偏移量进行渲染
+        x_off = -(self.rect.width / 2)
+        y_off = - self.rect.height
+        if len(self.stand_offset) > 0:
+            ani_idx = self.animator.get_current_frame_absolute_index()
+            if len(self.stand_offset) > ani_idx:
+                x_off = self.stand_offset[ani_idx]["offX"]
+                y_off = self.stand_offset[ani_idx]["offY"]
+        if self.has_behind:
+            # 渲染精灵
+            current_frame = self.animator.get_frame()
+            if current_frame:
+                a = current_frame.copy()
+                a.set_alpha(150)
+                GameManager.game_win.blit(a, (render_x + x_off, render_y + y_off))
+
+        # 绘制路径点和连接线
+        if GameManager.has_debug_render:
+            previous_pos = None
+            for pos in self.current_path:
+                local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
+                # 画点
+                pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
+                # 画线（连接前一个点到当前点）
+                if previous_pos is not None:
+                    pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
+                previous_pos = (local_x + 5, local_y + 5)
+
+            # 基点
+            pygame.draw.rect(GameManager.game_win, (250, 0, 0), (render_x, render_y, 10, 10), 0)
+
+        camera_pos = GameManager.game_camera.get_position()
+        trender_x = self.transform.x - camera_pos.x - (self.rect.width / 2)
+        trender_y = self.transform.y - camera_pos.y - self.rect.height - 20
+        # 绘制名称
+        GameManager.game_font.render_line_text(f"{self.name}",
+                                  max(
+                                      10,
+                                      int(trender_x + self.rect.width / 2 - GameManager.game_font.get_text_size(f"{self.name}")[
+                                          0] / 2)
+                                  ),
+                                  max(
+                                      10,
+                                      trender_y
+                                  ), True,
+                                  font_color="#FF7F24")
+
+        # 渲染血条
+        if self.battle_state and self.sprite_state != SpriteState.DEAD:
+            pygame.draw.rect(GameManager.game_win, (100, 220, 100),
+                             (self.rect.x + self.rect.width // 2 - 25, render_y + 4, 50, 5), 1)
+            pygame.draw.rect(GameManager.game_win, (255, 10, 10),
+                             (self.rect.x + self.rect.width // 2 - 25, render_y + 5,
+                              int(50 * self.healthy / self.max_healthy), 3), 0)
 
     def render_sticky(self):
         """置顶层"""
@@ -598,9 +674,9 @@ class SpriteBase:
         self.battle_texture = actor_data.get("战斗模型")
         self.scale_texture = float(actor_data.get("模型缩放"))
         if actor_data.get("站立偏移"):
-            self.stand_offset = [int(i) for i in actor_data.get("站立偏移").replace("'","").split(",")]
+            self.stand_offset = SourceManager.load_sprite_offset_config(actor_data.get("站立偏移"))
         if actor_data.get("移动偏移"):
-            self.move_offset = [int(i) for i in actor_data.get("移动偏移").replace("'","").split(",")]
+            self.stand_offset = SourceManager.load_sprite_offset_config(actor_data.get("移动偏移"))
 
         self.stand_model = [int(i) for i in actor_data.get("站立轴").split(",")]
         self.move_model = [int(i) for i in actor_data.get("移动轴").split(",")]
