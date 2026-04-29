@@ -19,7 +19,7 @@ from src.components.GameCheckBox import GameCheckBox
 from src.components.GameComponentBase import GameComponentBase
 from src.components.GameInput import GameInput
 from src.components.GameSlider import GameSlider
-from src.lib.GameEnum import ShopType
+from src.code.Enums import ShopType
 from src.manager.GameLogManger import GameLogManager
 from uuid import uuid4
 from src.manager.GameMapManager import GameMapManager

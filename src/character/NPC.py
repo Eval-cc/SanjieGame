@@ -143,8 +143,9 @@ class NpcSprite(SpriteBase):
                 fw *= self.scale_texture
                 fh *= self.scale_texture
 
-            first_frame = image.subsurface((0, 0, fw, fh))
-            self.rect = first_frame.get_bounding_rect()
+            # first_frame = image.subsurface((0, 0, fw, fh))
+            # self.rect = first_frame.get_bounding_rect()
+            self.rect = pygame.Rect(0, 0, fw, fh)
 
             for _dir_idx, dir_val in enumerate(directions):
                 d_idx = dir_val - 1
@@ -235,10 +236,6 @@ class NpcSprite(SpriteBase):
             GameManager.game_win.blit(current_frame, (render_x + x_off, render_y + y_off))
 
         if GameManager.has_debug_render:
-            # pygame.draw.rect(GameManager.game_win, (100, 220, 100), (
-            #     render_x + x_off, render_y + y_off,
-            #     self.rect.width, self.rect.height
-            # ), 1)
             pygame.draw.rect(GameManager.game_win, (100, 220, 100),
                              (
                                  self.rect.x - self.rect.width // 2, render_y - self.rect.height,
@@ -246,6 +243,7 @@ class NpcSprite(SpriteBase):
                              )
                              , 1)
 
+    # 该方法已经放入精灵基类进行统一渲染
     # def render_mask(self):
     #     self.eff_animator_stick.update(0.5, True)
     #     # 如果当前有挑战的NPC

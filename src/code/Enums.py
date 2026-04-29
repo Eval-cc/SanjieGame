@@ -66,3 +66,9 @@ class BattleState(Enum):
     """如果未结束 → 进入下一轮"""
     OVER = 7
     """战斗结束 → 结算"""
+
+
+class ShopType(Enum):
+    """商城类型"""
+    BUY = 1
+    SELL = 2

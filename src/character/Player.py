@@ -318,7 +318,6 @@ class Player(SpriteBase):
             # 获取帧坐标数据
             frame_coords = btn["frames"]
             frame_coords_1 = btn.get("frames1")
-
             new_surface = pygame.Surface([len(frame_coords) * _size, _size], pygame.SRCALPHA)
             # 创建新的Surface对象 (足够容纳两个帧)
             btn_sur = SourceManager.ssurface_scale(sprite_sheet.subsurface(frame_coords), [_size, _size])
@@ -357,7 +356,7 @@ class Player(SpriteBase):
                 frames_by_dir = {}
                 if not texture:
                     return frames_by_dir
-                image = SourceManager.load(f"{SourceManager.ui_npc_path}/{texture}.png").convert_alpha()
+                image = SourceManager.load(f"{SourceManager.ui_npc_path}/{texture}.png")
                 cols, rows = model
                 fw, fh = image.get_width() // cols, image.get_height() // rows
                 # 模型是否有缩放
@@ -367,8 +366,9 @@ class Player(SpriteBase):
                     fw *= self.scale_texture
                     fh *= self.scale_texture
 
-                first_frame = image.subsurface((0, 0, fw, fh))
-                self.rect = first_frame.get_bounding_rect()
+                # first_frame = image.subsurface((0, 0, fw, fh))
+                # self.rect = first_frame.get_bounding_rect()
+                self.rect = pygame.Rect(0, 0, fw, fh)
                 # 遍历每个方向
                 for _dir_idx, dir_val in enumerate(directions):
                     d_idx = dir_val - 1
@@ -494,11 +494,12 @@ class Player(SpriteBase):
         if GameManager.has_debug_render:
             pygame.draw.rect(GameManager.game_win, (100, 220, 100),
                              (
-                                 self.rect.x - self.rect.width // 2, render_y - self.rect.height,
+                                 render_x - self.rect.width // 2, render_y - self.rect.height,
                                  self.rect.width, self.rect.height
                              )
                              , 1)
-    #
+
+    # 该方法已经放入精灵基类进行统一渲染
     # def render_mask(self):
     #     # camera_pos = GameManager.game_camera.get_position()
     #     # render_x = self.transform.x - camera_pos.x # - (self.width / 2)
@@ -549,7 +550,7 @@ class Player(SpriteBase):
     def move(self):
         if self.sprite_state == SpriteState.ATTACK or BattleManager.battle_sta():
             return
-        """根据路径数组移动角色（修复坐标体系 + 播放动画）"""
+        """根据路径数组移动角色"""
         if self.sprite_state == SpriteState.IDLE or not self.current_path:
             # 如果当前没移动，确保播放站立动画
             if not self.animator.is_playing(f"stand_{self.direction}"):

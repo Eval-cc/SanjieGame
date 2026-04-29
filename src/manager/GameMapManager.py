@@ -60,40 +60,41 @@ class MapTile(TypedDict):
 
 class GameMapManager:
     map_timer = None
+    """当前场景的lua定时器"""
     map_id: str = ""
+    """地图ID"""
 
-    # 地图格子-- 表示每行每列的帧数量- 切换地图的时候会根据场景配置文件初始化
     __map_size = [0, 0]
+    """地图格子-- 表示每行每列的帧数量- 切换地图的时候会根据场景配置文件初始化"""
 
-    # 单帧地图块的尺寸-- 生成场景的时候请务必确保每帧都一致
     __frame_size = [0, 0]
-    # 添加一个类变量来记录上次执行的时间
+    """单帧地图块的尺寸-- 生成场景的时候请务必确保每帧都一致"""
     last_execution_time = 0
-    # 定义lua脚本的定时器 时间间隔
+    """添加一个类变量来记录上次执行的时间"""
     EXECUTION_INTERVAL = 1
-
-    # 当前地图的NPC信息
-    __map_npc_dict = {}
-
-    # 当前场景的定时器计数
+    """定义lua脚本的定时器 时间间隔"""
     __map_timer_total = 0
+    """当前场景的定时器计数"""
 
-    # 当前场景的地图精灵
+    __map_npc_dict = {}
+    """当前地图的NPC信息"""
+
     __map: list[str] = []
-    # 实际渲染的地图
+    """当前场景的地图精灵"""
     __render_map: Dict[str, MapTile] = {}
-    # 地图障碍点数组
+    """实际渲染的地图"""
     __passable = []
-    # 场景格子缓存
+    """地图障碍点数组"""
     grid_surface = None
-    # 遮罩层surface
+    """场景格子缓存"""
     mask_surface = None
+    """遮罩层surface"""
 
-    # 地图遮罩数据
-    __map_mask: dict[str:MapMask] = {}  # 存放遮罩数据 = {}
+    __map_mask: dict[str:MapMask] = {}
+    """地图遮罩数据, 存放遮罩数据"""
 
-    # 记录NPC重生计时器间隔
     NPC_RESTART_TIME = 1
+    """记录NPC重生计时器间隔"""
 
     CURR_BATTLE_NPC_UID = []
     """"当前触发了战斗的npc uid"""
@@ -147,8 +148,9 @@ class GameMapManager:
             # 三角剖分 (自动处理凸/凹多边形)
             try:
                 tri = Delaunay(points)
-            except:
-                continue  # 剖分失败时跳过
+            except Exception as ex:
+                GameLogManager.log_service_debug(f"生成三角区域的刷怪点出错:{ex}, 已跳过")
+                continue
 
             # 计算每个三角形的面积
             triangles = points[tri.simplices]
@@ -157,7 +159,8 @@ class GameMapManager:
             total_area = np.sum(areas)
 
             if total_area <= 0:
-                continue  # 零面积区域
+                GameLogManager.log_service_debug(f"该刷怪点属于 零面积区域, 已跳过")
+                continue
 
             # 按面积比例分配每个三角形要生成的数量
             counts = np.random.multinomial(
@@ -187,7 +190,7 @@ class GameMapManager:
     @classmethod
     def change_map(cls, map_name: str, target_x: int = None, target_y: int = None):
         """
-        开始执行地图lua脚本, 切换地图的时候执行一次
+        切换游戏地图
         :param map_name: 新场景的id
         :param target_x: 切换场景之后, 主角需要出现的x坐标
         :param target_y: 切换场景之后, 主角需要出现的y坐标
@@ -235,6 +238,10 @@ class GameMapManager:
                     GameMusicManager.play_bgm(scene_music)
                 else:
                     GameMusicManager.pause_bgm()
+                # 加载天气系统
+                if map_cfg.get("environment"):
+                    weather_type = map_cfg.get("environment").get("weather")
+                    GameManager.weather_sys.setWeather(weather_type)
 
         else:
             GameLogManager.log_service_error(f"未找到当前地图[{map_name}]的json配置文件")
@@ -244,11 +251,14 @@ class GameMapManager:
         if w_server:
             w_server.change_room(map_name)
 
+        # 读取当前场景的lua脚本
         lua_obj = GameLuaManager.load_map_lua(map_name)
         if lua_obj is not None:
+            # 挂载定时器方法
             cls.map_timer = lua_obj.OnTimer
             cls.__map_timer_total = 0  # 重置计数器
             if lua_obj.OnCreate:
+                # 开始执行地图lua的初始化脚本方法, 切换地图的时候执行一次. 可用于刷新特殊精灵.  比如用于副本场景,
                 lua_obj.OnCreate(cls)
 
         map_path = fr"{SourceManager.ui_map_path}/{map_name}"
@@ -268,7 +278,6 @@ class GameMapManager:
         # 清空遮罩
         cls.__map_mask.clear()
 
-        GameManager.weather_sys.setWeather("rain")
         try:
             with open(map_path + "/passable.txt", "r") as f:
                 map_pass_list = f.read().split("\n")

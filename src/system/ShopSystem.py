@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 from src.code.Item import Item
-from src.lib.GameEnum import ShopType
+from src.code.Enums import ShopType
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
 from src.system.GameToast import GameToastManager

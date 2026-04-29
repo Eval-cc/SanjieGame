@@ -43,7 +43,6 @@
     "spawn_areas": [],
     "resource_nodes": [],
     "environment": {
-        "weather": "sunny",
-        "time_of_day": "day"
+        "weather": "rain"
     }
 }

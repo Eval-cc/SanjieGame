@@ -25,10 +25,6 @@ from functools import partial
 from src.character.Player import Player
 from src.code.SpriteBase import SpriteBase
 from src.components.GameButton import GameButton
-from src.components.GameCheckBox import GameCheckBox
-from src.components.GameComponentBase import GameComponentBase
-from src.components.GameInput import GameInput
-from src.components.GameSlider import GameSlider
 from src.manager.GameFont import GameFont
 from src.manager.GameMapManager import GameMapManager
 from src.manager.SourceManager import SourceManager
@@ -44,7 +40,7 @@ from src.system.ShopSystem import ShopSystem
 
 if TYPE_CHECKING:
     from src.manager.GameManager import GameManager
-    from src.render.GameUI import GameUI
+    from src.components.GameComponentBase import GameComponentBase
 
 
 class GameLogin(SpriteBase):

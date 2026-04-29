@@ -112,7 +112,6 @@
         }
     ],
     "environment": {
-        "weather": "sunny",
-        "time_of_day": "day"
+        "weather": "snow"
     }
 }
