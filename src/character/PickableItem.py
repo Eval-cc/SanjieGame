@@ -34,7 +34,7 @@ class PickableItem(SpriteBase):
         self.item: "Item" = item
 
         rand_name = "pick_item1" if item.count > 30 else "pick_item2" if item.type != 1 else "pickable_item"
-        self.image = SourceManager.load(fr"Graphics\System\{rand_name}.png", [32, 32]).convert_alpha()
+        self.image = SourceManager.load(fr"{SourceManager.ui_system_path}\{rand_name}.png", [32, 32]).convert_alpha()
         self.rect = self.image.get_rect()
         # self.mask = SourceManager.create_surface_mask(self.image)
         self.layer = SpriteLayer.PICK_ITEM
@@ -72,6 +72,7 @@ class PickableItem(SpriteBase):
         )
         self.eff_animator_stick.play("pickable_item", speed=0.05, loop=True)
         if send_global:
+            # 如果连接上了服务器了, 那么就把这个推送给服务器
             w_server: "GameWorldServer" = GameManager.get_manager("w_server")
             if w_server:
                 w_server.send_msg('player_action', {
@@ -103,7 +104,6 @@ class PickableItem(SpriteBase):
         x = mt * mt * points[0][0] + 2 * mt * t * points[1][0] + t * t * points[2][0]
         y = mt * mt * points[0][1] + 2 * mt * t * points[1][1] + t * t * points[2][1]
 
-        # --- 新增优化部分 ---
         # 1. 子采样抗锯齿（计算前后两点取平均）
         sample_offset = 0.02  # 采样间隔
         t_prev = max(t - sample_offset, 0)
@@ -131,7 +131,7 @@ class PickableItem(SpriteBase):
         return f"可拾取_{self.item.name}"
 
     def update_animation(self):
-        """优化后的动画更新方法"""
+        """动画更新方法"""
         if not self.is_animating:
             return
 
@@ -168,7 +168,7 @@ class PickableItem(SpriteBase):
         return t * (2 - t)
 
     def render_floor(self):
-        """优化后的渲染方法"""
+        """播放地面动画"""
         self.update_animation()
 
         camera_pos = GameManager.game_camera.get_position()
@@ -177,7 +177,7 @@ class PickableItem(SpriteBase):
         self.rect.x = render_x
         self.rect.y = render_y
 
-        # 优化旋转效果
+        # 旋转效果
         if self.is_animating:
             # 使用缓动旋转 (先快后慢)
             angle = 360 * self.ease_out_quad(self.rotation_progress)

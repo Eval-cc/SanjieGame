@@ -222,7 +222,7 @@ class GameEvent:
                                 game_ui.change_mouse_cursor(MouseState.PICK_ITEM)
 
                         # 如果调用方法返回 False 就结束,  如果返回True就说明允许向下穿透
-                        if not method({"type": mouse_type, "mouse_pos": mouse_pos}):
+                        if not method({"type": mouse_type, "mouse_pos": mouse_pos, "button": event.get("button")}):
                             return
 
 

@@ -66,6 +66,8 @@ class Item(SpriteBase):
         '主属性': {'attr': 'primary_attr_id', 'default': 0, 'type': int},
         '副属性': {'attr': 'secondary_attr_id', 'default': 0, 'type': int},
         '过期时间': {'attr': 'expire_time', 'default': 0, 'type': int},
+        '品质': {'attr': 'quality', 'default': 'white', 'type': str},
+        '强化等级': {'attr': 'enhance_level', 'default': 0, 'type': int},
     }
 
     def __init__(self, item_data: dict):
@@ -121,6 +123,7 @@ class Item(SpriteBase):
         self.primary_attr_id = -1  # 主属性 ID (基础攻击、防御等)   暂时应该用不到. 先留着
         self.secondary_attr_id = -1  # 副属性 ID (强化等级、词条等)
         self.expire_time = -1  # 过期时间 (时间戳)
+        self.quality = "white"  # 品质预留 white/green/blue/gold/purple
 
         # 当前道具位于背包的位置, 第一个参数是在第几页, 后面两个是背包的 x, y 坐标系
         self.__pos = [0, 0, 0]
@@ -141,9 +144,9 @@ class Item(SpriteBase):
         for config_key, mapping in Item.FIELD_MAPPING.items():
             raw_value = item_data.get(config_key)  # 从配置中取值
             if config_key == "Icon":
-                self.avatar = SourceManager.ssurface_scale(
+                self.avatar = SourceManager.surface_scale(
                     SourceManager.load(fr"{SourceManager.ui_item_path}\help\{raw_value}.png"), [55, 55])
-                self.icon = SourceManager.ssurface_scale(
+                self.icon = SourceManager.surface_scale(
                     SourceManager.load(fr"{SourceManager.ui_item_path}\{raw_value}.png"), [40, 40])
                 self.rect = self.icon.get_rect()
                 continue
@@ -216,6 +219,7 @@ class Item(SpriteBase):
             "最大使用次数": f"最大使用次数:{self.max_count}",
             "技能ID": self.skill_id,
             "套装ID": self.set_id,
+            "品质": self.quality,
             "说明": self.description,
         }
 

@@ -86,6 +86,7 @@ class GameInput(SpriteBase, GameComponentBase):
         # 事件回调
         self.on_change = None
         self.on_submit = None
+        self.on_history = None
 
         # # 在初始化方法中添加
         # self.ime_composing = False  # 是否正在输入法组合状态
@@ -386,6 +387,13 @@ class GameInput(SpriteBase, GameComponentBase):
         elif key == pygame.K_END:
             self.cursor_index = len(self.text)
             self._reset_blink()
+        elif key == pygame.K_UP or key == pygame.K_DOWN:
+            if self.on_history:
+                direction = "up" if key == pygame.K_UP else "down"
+                next_text = self.on_history(direction, self.text)
+                if next_text is not None:
+                    self.set_text(str(next_text))
+                return
         elif key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
             if self.on_submit:
                 self.on_submit(self.text)
@@ -481,4 +489,4 @@ class GameInput(SpriteBase, GameComponentBase):
 
 
     def update_value(self, value: Any):
-        self.text = str(value)
+        self.set_text(str(value))

@@ -213,6 +213,8 @@ class GameLogin(SpriteBase):
         # game_ui.set_surface_ui("登录账号UI", dialog_sur)
 
         def __entrance_game(acc_name, data):
+            from src.system.ChatSystem import ChatSystem
+
             self.gm.game_dialog.close_dialog()
             for dl in self.dialog_list.values():
                 dl.close_dialog()
@@ -223,6 +225,8 @@ class GameLogin(SpriteBase):
             # game_ui.remove_surface_ui("登录账号UI")
             self.gm.shop_system = ShopSystem(self.gm)
             self.gm.add("地图", RenderMap())
+            self.gm.chat_system = ChatSystem(self.gm)
+            self.gm.chat_system.show()
 
         # 设置点击回调
         def on_button_click():
@@ -236,9 +240,9 @@ class GameLogin(SpriteBase):
             if len(user_name) == 0 or len(password) == 0:
                 GameDialogBoxManager.dialog("账号密码不能为空")
                 return
-            login = LoginServer("http://169.254.249.130:8089/")
+            # login = LoginServer("http://169.254.249.130:8089/")
 
-            # login = LoginServer()
+            login = LoginServer()
 
             def _on_login_success(data: dict):
                 nonlocal login
@@ -252,7 +256,8 @@ class GameLogin(SpriteBase):
 
                 # 实例化服务器连接
                 # w_server = GameWorldServer(self.gm.get("主角"),self.gm,"http://llzfs.online:8089/")
-                w_server = GameWorldServer(self.gm.get("主角"), self.gm, "http://169.254.249.130:8089/")
+                # w_server = GameWorldServer(self.gm.get("主角"), self.gm, "http://169.254.249.130:8089/")
+                w_server = GameWorldServer(self.gm.get("主角"), self.gm)
                 ser_sta = w_server.connect_sync(GameMapManager.map_id)
                 if not ser_sta:
                     raise Exception("服务器连接失败")
@@ -349,7 +354,7 @@ class GameLogin(SpriteBase):
                        loc="right_center"
                        )
 
-        dl1 = GameDialog(self.gm, "健康游戏公告10086")
+        dl1 = GameDialog(self.gm, "健康游戏公告")
         dl1.show_dialog(SourceManager.cfg_ui_path + "/game_HGA.html",
                         render_x=0,
                         render_y=0,

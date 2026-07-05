@@ -60,6 +60,12 @@ class TaskParingEngine(HTMLParser):
         返回解析结果
         :return: 字典结构的HTML解析结果
         """
+        self.root = None
+        self.node_stack = []
+        self.in_app_div = False
+        self.app_div_node = None
+        super().reset()
+
         self.feed(html_str)
         if self.app_div_node:
             return self._node_to_dict(self.app_div_node)

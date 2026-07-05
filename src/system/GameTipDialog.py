@@ -32,7 +32,7 @@ class _GameTipDialog(SpriteBase):
 
         self._width = 200
         self._height = 230
-        dialog_title = SourceManager.ssurface_scale(
+        dialog_title = SourceManager.surface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
             [self._width, 32]).convert_alpha()
 

@@ -63,6 +63,8 @@ class GameMapManager:
     """当前场景的lua定时器"""
     map_id: str = ""
     """地图ID"""
+    scene_name: str = ""
+    """当前场景名称"""
 
     __map_size = [0, 0]
     """地图格子-- 表示每行每列的帧数量- 切换地图的时候会根据场景配置文件初始化"""
@@ -200,6 +202,7 @@ class GameMapManager:
 
         cls.clear_map_npc()  # 把之前的NPC给移除掉
         cls.map_id = map_name
+        cls.scene_name = str(map_name)
         GameManager.game_camera.unmounted()  # 卸载相机挂载
 
         map_cfg_path = fr"{SourceManager.cfg_map_path}/map/{map_name}.json"
@@ -227,6 +230,7 @@ class GameMapManager:
                     GameLogManager.log_service_error(f"出错了,请确保地图的配置文件关于场景的 [尺寸 ,行列] 计数是否合法")
                     raise Exception(f"出错了,请确保地图的配置文件是否合法")
 
+                cls.scene_name = map_cfg.get("scene_name") or str(map_name)
                 GameMapManager.__map_size = [column, row]
                 GameMapManager.__frame_size = [frame_w, frame_h]
 
@@ -324,6 +328,8 @@ class GameMapManager:
                 u_player.set_pos(target_x, target_y)
             # 挂载相机
             GameManager.game_camera.mounted(u_player)
+            if hasattr(u_player, "update_blit_map"):
+                u_player.update_blit_map = True
         else:
             GameDialogBoxManager.dialog("无法执行相机挂载. 未找到角色信息")
 
@@ -336,6 +342,16 @@ class GameMapManager:
     def game_map_mask_data(cls) -> dict:
         """得到地图遮罩信息"""
         return cls.__map_mask
+
+    @classmethod
+    def game_map_npcs(cls) -> list["NpcSprite"]:
+        """得到当前地图的NPC/怪物列表"""
+        return list(cls.__map_npc_dict.values())
+
+    @classmethod
+    def map_scene_name(cls) -> str:
+        """得到当前场景显示名称"""
+        return cls.scene_name or str(cls.map_id)
 
     @classmethod
     def game_map_surface_path(cls) -> list[str]:

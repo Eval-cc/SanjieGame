@@ -66,6 +66,9 @@ class GameDialog:
         self.__render_offset = []
         # 触发UI里面的点击事件之后, 触发的回调
         self.dialog_callback = None
+        self.dialog_hover_callback = False
+        self.__hover_node_key = None
+        self.__listen_keyboard_callback = None
         # 存放对应的事件字典
         self.dialog_event_dict = {}
         # 存放单独的控件
@@ -75,7 +78,8 @@ class GameDialog:
 
     def show_dialog(self, dialog_path: str, npc=None, render_x: int = 5, render_y: int = -1, dialog_callback=None,
                     overwrite_path: bool = False, dialog_event_dict: Dict[str, Any] = None, loc: str = "middle",
-                    load_val: Dict[str, Any] = None):
+                    load_val: Dict[str, Any] = None, always_on_top: bool = False, hover_callback: bool = False,
+                    listen_keyboard=None, esc_close: bool = True):
 
         """调用NPC对话"""
         self.__scroll_y = 0
@@ -88,8 +92,13 @@ class GameDialog:
         render_x, render_y = 5 if render_x == -1 else max(render_x, 5), 60 if render_y == -1 else max(render_y, 35)
         self.__render_offset = [render_x, render_y]
         self.__GUI_rect_list.clear()  # 清空点击的坐标信息
+        self.__hover_node_key = None
+        self.__focus_node = None
+        self.__has_focus = False
+        self.dialog_hover_callback = hover_callback
 
-        self.dialog_event_dict = dialog_event_dict
+        self.dialog_event_dict = dialog_event_dict or {}
+        self.__listen_keyboard_callback = listen_keyboard
 
         dialog_file_path = dialog_path  # 默认指向的就是传入的路径
         if not overwrite_path:
@@ -119,7 +128,7 @@ class GameDialog:
             dialog_sur: pygame.Surface = game_ui.get_surface_ui(self.dialog_key)
 
             if self.dialog_title is None or self.dialog_title.width != int(width):
-                self.dialog_title = SourceManager.ssurface_scale(
+                self.dialog_title = SourceManager.surface_scale(
                     SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"),
                     [int(width), 32]).convert_alpha()
 
@@ -160,7 +169,7 @@ class GameDialog:
                                                           "mouse_up": self.mouse_up,
                                                           "mouse_move": self.mouse_move,
                                                           # "mouse_out": self.mouse_out,
-                                                          # "mouse_double_click": self.mouse_double_click,
+                                                          "mouse_double_click": self.mouse_double_click,
                                                           "update_event": self.render,
                                                           "mouse_scroll_wheel_down": self.mouse_scroll_wheel_down,
                                                           "mouse_scroll_wheel_up": self.mouse_scroll_wheel_up,
@@ -175,8 +184,10 @@ class GameDialog:
                                                           # "item_event": None,
                                                           # "item_hover_event": None,
                                                           "update_blit": self.__update_blit,
-                                                          "listen_keyboard": lambda: self.has_close,
-                                                          "hide_callback": self.__hide_callback
+                                                          "listen_keyboard": self.__listen_keyboard,
+                                                          "hide_callback": self.__hide_callback,
+                                                          "always_on_top": always_on_top,
+                                                          "esc_close": esc_close
                                                           # "un_allow": True  # 显示此UI的时候 禁止其他操作, 除了另一个UI
                                                       }, sort=True)
                 self.rect = rect
@@ -205,6 +216,11 @@ class GameDialog:
                 self._load_val(load_val)
 
             game_ui.set_surface_ui(self.dialog_key, dialog_sur)
+            win_sprite = game_ui.get_surface_sprite(self.dialog_key)
+            if win_sprite is not None:
+                win_sprite["always_on_top"] = always_on_top
+                win_sprite["listen_keyboard"] = self.__listen_keyboard
+                win_sprite["esc_close"] = esc_close
             if self.__scroll_max > 0:
                 scrollbar_x = dialog_sur.get_width() - 8
                 scrollbar_height = max(20, (visible_height / (self.__render_full_height + 1)) * visible_height)
@@ -241,6 +257,10 @@ class GameDialog:
                     self.dialog_callback(node)
                     return
                 if node.get('tag') == "a":
+                    _be = node.get("attrs").get("@click")
+                    if _be and self.dialog_event_dict.get(_be):
+                        self.dialog_event_dict[_be]()
+                        return
                     self.__cached_result = None
                     href = node.get('attrs').get("href", "")
                     hash_index = href.find("#")
@@ -347,8 +367,11 @@ class GameDialog:
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
         win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
+        hover_node = None
         for [node, gui_rect] in self.__GUI_rect_list:
             if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
+                hover_node = node
+                self.__emit_hover_node(node, mouse_pos)
                 if node.get('tag') == "slider":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_move"):
@@ -366,37 +389,79 @@ class GameDialog:
                         self.update_blit = True
                     return
                 return
+        if hover_node is None:
+            self.__emit_hover_node(None, mouse_pos)
+
+    def __emit_hover_node(self, node, mouse_pos):
+        if not self.dialog_hover_callback or not self.dialog_callback:
+            return
+        hover_key = id(node) if node is not None else None
+        if hover_key == self.__hover_node_key and node is not None:
+            self.dialog_callback({"__type": "hover_move", "node": node, "mouse_pos": mouse_pos})
+            return
+        self.__hover_node_key = hover_key
+        if node is None:
+            self.dialog_callback({"__type": "hover_out", "mouse_pos": mouse_pos})
+            return
+        self.dialog_callback({"__type": "hover", "node": node, "mouse_pos": mouse_pos})
 
     #
     # def mouse_out(self):
     #     pass
     #
-    # def mouse_double_click(self):
-    #     pass
+    def mouse_double_click(self, **args):
+        event = args.get("event")
+        mouse_pos = pygame.mouse.get_pos()
+        game_ui: GameUI = self.gm.get("游戏UI")
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key)
+        if win_sprite is None:
+            return False
+
+        for [node, gui_rect] in self.__GUI_rect_list:
+            if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
+                if self.dialog_callback:
+                    self.dialog_callback({"__type": "double_click", "node": node, "mouse_pos": mouse_pos})
+                    return False
+                return False
+        return False
 
     def mouse_scroll_wheel_down(self):
         """
         UI的滚轮向下事件
         :return:
         """
+        scroll_event = self.dialog_event_dict.get("__scroll_down")
+        if scroll_event:
+            if scroll_event() is not True:
+                return False
+
         if self.__scroll_y < self.__scroll_max:
             self.__has_focus = True
             self.__GUI_rect_list.clear()
             self.__scroll_y = min(self.__scroll_y + 30, self.__scroll_max)
             self.update_blit = True
             self.__has_scroll_wheel = True
+            return False
+        return True
 
     def mouse_scroll_wheel_up(self):
         """
         UI的滚轮向上事件
         :return:
         """
+        scroll_event = self.dialog_event_dict.get("__scroll_up")
+        if scroll_event:
+            if scroll_event() is not True:
+                return False
+
         if self.__scroll_y > 0:
             self.__has_focus = True
             self.__GUI_rect_list.clear()
             self.__scroll_y = max(self.__scroll_y - 30, 0)
             self.update_blit = True
             self.__has_scroll_wheel = True
+            return False
+        return True
 
     def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if self.__focus_node is None:
@@ -409,13 +474,16 @@ class GameDialog:
             return
 
     def key_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-        if not self.has_close:
+        if not self.__listen_keyboard():
             return
         if self.__focus_node:
             _com = self._alone_component.get(self.__focus_node.get("target"))
             if _com and hasattr(_com, "key_down"):
                 if _com.key_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                     return
+                if hasattr(_com, "listen_keyboard") and not _com.listen_keyboard():
+                    self.__focus_node = None
+                    self.__has_focus = False
                 return
 
     def keyboard_pressed(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
@@ -586,7 +654,7 @@ class GameDialog:
                         _cbg_w, _cbg_h = target_size
                     else:
                         if _cbg_w > 0 and _cbg_h > 0:
-                            cbg_sur = SourceManager.ssurface_scale(cbg_sur, [_cbg_w, _cbg_h])
+                            cbg_sur = SourceManager.surface_scale(cbg_sur, [_cbg_w, _cbg_h])
                         else:
                             _cbg_w, _cbg_h = cbg_sur.get_size()
                         if dom_id == "app":  # 根节点不跟随滚动.
@@ -688,8 +756,8 @@ class GameDialog:
                 if _biw == 0 or _bih == 0:
                     btn_surface = self.__ui_cache_dict.get(f"ui_btn-bg_{node_text}")
                     if btn_surface is None:
-                        btn_surface = SourceManager.ssurface_scale(params["surface"],
-                                                                   [text_surface.width + 20, frame_size // 2.5])
+                        btn_surface = SourceManager.surface_scale(params["surface"],
+                                                                  [text_surface.width + 20, frame_size // 2.5])
                     btn_rect = btn_surface.get_rect()
                     btn_rect.x = render_x
                     btn_rect.y = render_y
@@ -769,30 +837,47 @@ class GameDialog:
 
         elif tag == "img":
             if not curr_style["src"]:
-                img_surface = self.__ui_cache_dict.get(f"ui_img_none")
+                placeholder_size = curr_style.get("img-size") or [
+                    int(attrs.get("width", 50)),
+                    int(attrs.get("height", 50))
+                ]
+                img_surface = self.__ui_cache_dict.get(f"ui_img_none_{placeholder_size[0]}_{placeholder_size[1]}")
                 if img_surface is None:
-                    img_surface = pygame.Surface((50, 50))
-                    img_surface.fill((200, 200, 200))
-                    self.__ui_cache_dict["ui_img_none"] = img_surface
+                    img_surface = pygame.Surface(placeholder_size, pygame.SRCALPHA)
+                    self.__ui_cache_dict[f"ui_img_none_{placeholder_size[0]}_{placeholder_size[1]}"] = img_surface
 
                 # 跳过不可视区域
                 self.blit_with_clipping(dialog_sur, img_surface, render_x, render_y, view_height)
                 render_y += img_surface.height
             else:
                 img_url = curr_style["src"]
-                img_surface = self.__ui_cache_dict.get(f"ui_img_{curr_style["src"]}")
+                img_size = curr_style.get("img-size")
+                img_cache_key = f"ui_img_{curr_style['src']}"
+                if img_size:
+                    img_cache_key = f"{img_cache_key}_{img_size[0]}_{img_size[1]}"
+                img_surface = self.__ui_cache_dict.get(img_cache_key)
                 if img_surface is None:
+                    raw_cache_key = f"ui_img_raw_{curr_style['src']}"
+                    raw_surface = self.__ui_cache_dict.get(raw_cache_key)
                     if img_url == "{{NPC_AVATAR}}":
                         # 指定了用当前NPC的头像, 但是当前NPC又没有配置头像的情况下, 直接跳出 不渲染img标签
                         if not hasattr(self.__curr_npc, "avatar") or self.__curr_npc.avatar is None:
                             return render_y
-                        img_surface = self.__curr_npc.avatar
+                        raw_surface = self.__curr_npc.avatar
                     else:
-                        img_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{curr_style['src']}")
-                        self.__ui_cache_dict[f"ui_img_{curr_style["src"]}"] = img_surface
+                        if raw_surface is None:
+                            if img_url.startswith("#ROOT_SKILL"):
+                                img_url = img_url.replace("#ROOT_SKILL", SourceManager.ui_skill_path)
+                                raw_surface = SourceManager.load(img_url)
+                            elif img_url.startswith("#ROOT_ITEM"):
+                                img_url = img_url.replace("#ROOT_ITEM", SourceManager.ui_item_path)
+                                raw_surface = SourceManager.load(img_url)
+                            else:
+                                raw_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{curr_style['src']}")
+                            self.__ui_cache_dict[raw_cache_key] = raw_surface
 
-                    if curr_style.get("img-size"):
-                        img_surface = SourceManager.ssurface_scale(img_surface, curr_style.get("img-size", [0, 0]))
+                    img_surface = SourceManager.surface_scale(raw_surface, img_size) if img_size else raw_surface
+                    self.__ui_cache_dict[img_cache_key] = img_surface
 
                 # 跳过不可视区域
                 self.blit_with_clipping(dialog_sur, img_surface, render_x, render_y, view_height)
@@ -883,6 +968,17 @@ class GameDialog:
                 exist_com.update_pos(render_x, render_y)
                 self.blit_with_clipping(dialog_sur, exist_com.render(), render_x, render_y, view_height)
                 render_y += exist_com.rect.height
+            submit_event = attrs.get("@submit")
+            if submit_event and self.dialog_event_dict.get(submit_event):
+                exist_com.on_submit = lambda value, event_key=submit_event: self.dialog_event_dict[event_key](value)
+            else:
+                exist_com.on_submit = None
+            history_event = attrs.get("@history")
+            if history_event and self.dialog_event_dict.get(history_event):
+                exist_com.on_history = lambda direction, value, event_key=history_event: self.dialog_event_dict[event_key](
+                    direction, value)
+            else:
+                exist_com.on_history = None
             render_y += 5
             self.__GUI_rect_list.append([{"tag": tag, "target": dom_id, "attrs": attrs}, exist_com.rect])
 
@@ -1050,7 +1146,16 @@ class GameDialog:
                                     # 加载图片
                                     img_surface = self.__ui_cache_dict.get(f"ui_img_{img_src}")
                                     if img_surface is None:
-                                        img_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{img_src}")
+                                        if img_src.startswith("#ROOT_SKILL"):
+                                            img_surface = SourceManager.load(
+                                                img_src.replace("#ROOT_SKILL", SourceManager.ui_skill_path)
+                                            )
+                                        elif img_src.startswith("#ROOT_ITEM"):
+                                            img_surface = SourceManager.load(
+                                                img_src.replace("#ROOT_ITEM", SourceManager.ui_item_path)
+                                            )
+                                        else:
+                                            img_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{img_src}")
                                         self.__ui_cache_dict[f"ui_img_{img_src}"] = img_surface
 
                                     if img_surface:
@@ -1066,8 +1171,8 @@ class GameDialog:
                                             img_rect.centery = li_height // 2
                                         if img_surface.height > li_height:
                                             prop_w = li_height / img_surface.height
-                                            img_bak = SourceManager.ssurface_scale(img_surface,
-                                                                                   [round(img_surface.width * prop_w),
+                                            img_bak = SourceManager.surface_scale(img_surface,
+                                                                                  [round(img_surface.width * prop_w),
                                                                                     li_height])
                                             img_rect.y = 0
                                             element_x += img_bak.width + 5 + __li_padding[3]
@@ -1076,6 +1181,11 @@ class GameDialog:
                                             li_surface.blit(img_surface, img_rect)
                                             element_x += img_rect.width + 5
                                         max_line_height = max(max_line_height, img_rect.height)
+                                else:
+                                    img_width = int(img_attrs.get("width", 36))
+                                    img_height = int(img_attrs.get("height", 36))
+                                    element_x += img_width + 5
+                                    max_line_height = max(max_line_height, img_height)
 
                             # 检查是否需要换行
                             if element_x > li_width - 5:
@@ -1311,9 +1421,21 @@ class GameDialog:
             pygame.draw.line(dialog_sur, color, start, end, width)
             render_y += 3
         else:
+            fixed_height = int(attrs.get("height", 0) or 0) if tag == "div" and dom_id != "app" else 0
+            start_render_y = render_y
+            old_clip = None
+            if fixed_height > 0:
+                fixed_width = int(attrs.get("width", dialog_sur.width - render_x - __el_padding[1]) or 0)
+                fixed_rect = pygame.Rect(render_x, render_y, fixed_width, fixed_height)
+                old_clip = dialog_sur.get_clip()
+                dialog_sur.set_clip(fixed_rect.clip(old_clip))
             for child in children:
                 render_y = self.create_node(dialog_sur, child, render_x, render_y, curr_style,
                                             parent_color=curr_style["color"])
+            if old_clip is not None:
+                dialog_sur.set_clip(old_clip)
+            if fixed_height > 0:
+                render_y = start_render_y + fixed_height
 
         return render_y
 
@@ -1447,6 +1569,59 @@ class GameDialog:
         :return:
         """
         return self.__cached_result is not None
+
+    def has_focus(self):
+        """当前对话框内部是否有控件正在接收键盘输入."""
+        return self.__focus_node is not None
+
+    def __listen_keyboard(self):
+        if self.__listen_keyboard_callback is None:
+            return self.has_close
+        if callable(self.__listen_keyboard_callback):
+            return bool(self.__listen_keyboard_callback())
+        return bool(self.__listen_keyboard_callback)
+
+    def set_val(self, dom_id: str, value: Any):
+        """公开的控件赋值入口, 给聊天框这类常驻UI使用."""
+        self._load_val({dom_id: value})
+        self.update_blit = True
+
+    def focus(self, dom_id: str):
+        component = self._alone_component.get(dom_id)
+        if component is None:
+            return False
+
+        from src.manager.GameEvent import GameEvent
+        for _com in GameEvent.all_input_pool():
+            if _com != component and hasattr(_com, "blur"):
+                _com.blur()
+
+        if hasattr(component, "has_focus"):
+            component.has_focus = True
+        if hasattr(component, "cursor_index") and hasattr(component, "text"):
+            component.cursor_index = len(component.text)
+        if hasattr(component, "need_redraw"):
+            component.need_redraw = True
+
+        for node, _ in self.__GUI_rect_list:
+            if node.get("target") == dom_id or node.get("attrs", {}).get("id") == dom_id:
+                self.__focus_node = node
+                break
+
+        game_ui: GameUI = self.gm.get("游戏UI")
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key) if game_ui else None
+        if win_sprite is not None and getattr(component, "rect", None) is not None:
+            pygame.key.start_text_input()
+            pygame.key.set_text_input_rect([
+                win_sprite.get("rect").x + component.rect.x,
+                win_sprite.get("rect").y + component.rect.y + component.rect.height,
+                component.rect.width,
+                component.rect.height,
+            ])
+
+        self.__has_focus = True
+        self.update_blit = True
+        return True
 
     def _load_val(self, val: Dict[str, Any]):
         """

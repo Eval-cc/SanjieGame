@@ -28,9 +28,9 @@ from src.system.GameToast import GameToastManager
 class GameUI(SpriteBase):
     def __init__(self, gm):
         super().__init__([
-            ["游戏UI点击事件", "游戏UI键盘按下事件", "游戏UI键盘抬起事件", "游戏UI上滚轮事件", "游戏UI下滚轮事件",
+            ["游戏UI点击事件", "游戏UI右键事件", "游戏UI键盘按下事件", "游戏UI键盘抬起事件", "游戏UI上滚轮事件", "游戏UI下滚轮事件",
              "游戏UI键盘长按事件", "输入框候选字事件"],
-            [1, 6, 7, 4, 5, 8, 9]])
+            [1, 3, 6, 7, 4, 5, 8, 9]])
         self.layer_order = 999
         self.rect_list: list = []
 
@@ -80,6 +80,30 @@ class GameUI(SpriteBase):
                                                sorted(self.rect_list, key=lambda sur: sur["render_layer"],
                                                       reverse=False)}
 
+    @staticmethod
+    def __max_layer(surfaces: list[dict], layer_key: str) -> int:
+        if not surfaces:
+            return 0
+        return max(int(sur.get(layer_key, 0)) for sur in surfaces)
+
+    def __keep_top_surfaces_above(self):
+        """保持浮层窗口永远压在普通窗口上, 同时保留浮层之间当前的相对顺序."""
+        normal_surfaces = [
+            sur for sur in self.rect_list
+            if sur.get("show") and not sur.get("always_on_top")
+        ]
+        top_surfaces = sorted(
+            [sur for sur in self.rect_list if sur.get("show") and sur.get("always_on_top")],
+            key=lambda sur: int(sur.get("render_layer", 0))
+        )
+        render_level = self.__max_layer(normal_surfaces, "render_layer")
+        event_level = self.__max_layer(normal_surfaces, "event_layer")
+        for sur in top_surfaces:
+            render_level += 1
+            event_level += 1
+            sur["render_layer"] = render_level
+            sur["event_layer"] = event_level
+
     def load_system_ui(self, path: str | pygame.Surface, size: list[int] = None, loc: str = None, options: dict = None,
                        pos: list = None, sort: bool = False):
         """
@@ -94,7 +118,7 @@ class GameUI(SpriteBase):
 
         ui_surface = path
         if type(path) == str:
-            ui_surface = SourceManager.ssurface_scale(SourceManager.load(path), size) if size else SourceManager.load(
+            ui_surface = SourceManager.surface_scale(SourceManager.load(path), size) if size else SourceManager.load(
                 path)
 
         sur_rect = ui_surface.get_rect()
@@ -164,12 +188,14 @@ class GameUI(SpriteBase):
             "rect": sur_rect,
             "mask": SourceManager.create_surface_mask(ui_surface),
             "mouse_down": None if options.get("mouse_down") is None else options.get("mouse_down", lambda e : None),
+            "right_mouse_down": options.get("right_mouse_down"),
             "event_layer": len(self.rect_list) + 2 if options.get("event_layer") is None else options.get(
                 "event_layer"),
             "render_layer": len(self.rect_list) + 5 if options.get("render_layer") is None else options.get(
                 "render_layer"),
             "show": False if options.get("show") is None else options.get("show"),
             "drag": False if options.get("drag") is None else options.get("drag"),
+            "always_on_top": False if options.get("always_on_top") is None else options.get("always_on_top"),
             "drag_rect": None,
             "mask_surface": None,
             "update_blit": [] if options.get("update_blit") is None else options.get("update_blit"),
@@ -314,10 +340,18 @@ class GameUI(SpriteBase):
         return params.get("show")
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-        super().mouse_down(event)
+        is_right_click = event.get("button") == 3
+        if not is_right_click:
+            super().mouse_down(event)
         if self.get_click_sprite_index() >= 0:
             target: dict = self.rect_list[self.get_click_sprite_index()]
             self.__click_surface = target
+
+            if is_right_click:
+                cl = target.get("right_mouse_down")
+                if cl is None:
+                    return True
+                return cl(event=event)
 
             if target.get("frame"):
                 target.get("frame")["index"] = 1 if target.get("frame").get("target_index") is None else target.get(
@@ -409,13 +443,27 @@ class GameUI(SpriteBase):
         :param event:
         :return:
         """
+        target = None
         if self.get_click_sprite_index() >= 0:
-            target: dict = self.rect_list[self.get_click_sprite_index()]
+            target = self.rect_list[self.get_click_sprite_index()]
+        else:
+            mouse_pos = event.get("mouse_pos", pygame.mouse.get_pos())
+            for ui_surface in self.rect_list:
+                if ui_surface.get("ignore_event") or not ui_surface.get("show"):
+                    continue
+                rect = ui_surface.get("rect")
+                if rect and rect.collidepoint(mouse_pos[0], mouse_pos[1]) and ui_surface.get("mouse_double_click"):
+                    target = ui_surface
+                    break
+        if target:
             self.__click_surface = target
             move_fun = target.get("mouse_double_click")
             if not move_fun:
                 return False
-            move_fun()
+            try:
+                move_fun(event=event)
+            except TypeError:
+                move_fun()
             return False
         return True
 
@@ -469,16 +517,16 @@ class GameUI(SpriteBase):
             GameToastManager.add_message(f"打开UI失败! 未知的UI组件:{name}")
             GameLogManager.log_service_debug(f"打开UI失败! 未知的UI组件:{name}")
             return
-        # 得到当前最大的层级, 每次操作都会进行排序, 所以索引 0 一定的最上面的ui
-        layer_level = int(self.rect_list[0]["render_layer"])
-        event_level = int(self.rect_list[0]["event_layer"])
 
+        target_is_top = bool(target_ui.get("always_on_top"))
+        layer_stack = [
+            sur for sur in self.rect_list
+            if sur.get("show") and bool(sur.get("always_on_top")) == target_is_top
+        ]
+        layer_level = self.__max_layer(layer_stack, "render_layer")
+        event_level = self.__max_layer(layer_stack, "event_layer")
         old_layer = int(target_ui["render_layer"])
-        for sur in self.rect_list:
-            # 恢复被点击的层级
-            if sur.get("drag") and sur.get("name") != target_ui.get("name"):
-                sur["render_layer"] = sur["old_render_layer"]
-                sur["event_layer"] = sur["old_event_layer"]
+
         if not target_ui["show"]:
             target_ui["show"] = not target_ui["show"]
             target_ui["render_layer"] = layer_level + 1
@@ -493,6 +541,7 @@ class GameUI(SpriteBase):
             else:
                 target_ui["render_layer"] = layer_level + 1
                 target_ui["event_layer"] = event_level + 1
+        self.__keep_top_surfaces_above()
         self.__sort_layer_layer()
         # 是否需要恢复到屏幕中间
         if center:
@@ -506,14 +555,14 @@ class GameUI(SpriteBase):
         :return:
         """
         for sur in self.rect_list:
-            if sur.get("listen_keyboard"):
-                return sur.get("listen_keyboard")()
+            if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
+                return True
         return False
 
     def key_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         # 给优先级最高的UI触发键盘时间
         for sur in self.rect_list:
-            if sur.get("listen_keyboard") and sur.get("show"):
+            if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
                 if sur.get("key_up"):
                     sur["key_up"](event)
                     return False
@@ -523,13 +572,15 @@ class GameUI(SpriteBase):
         if event.get("event").scancode == 41:
             # Esc关闭UI, 根据事件的顺序
             for sur in self.rect_list:
-                if sur.get("listen_keyboard") and sur.get("show"):
-                    self.close_surface_ui(sur.get("name"))
+                if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
+                    if sur.get("esc_close", True):
+                        self.close_surface_ui(sur.get("name"))
+                    elif sur.get("key_down"):
+                        sur["key_down"](event)
                     return False
-            return True
         # 给优先级最高的UI触发键盘时间
         for sur in self.rect_list:
-            if sur.get("listen_keyboard") and sur.get("show"):
+            if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
                 if sur.get("key_down"):
                     sur["key_down"](event)
                     return False
@@ -539,7 +590,7 @@ class GameUI(SpriteBase):
     def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         # 给优先级最高的UI触发键盘时间
         for sur in self.rect_list:
-            if sur.get("listen_keyboard") and sur.get("show"):
+            if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
                 if sur.get("key_text"):
                     sur["key_text"](event)
                     break

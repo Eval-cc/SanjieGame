@@ -69,18 +69,18 @@ class ShopSystem:
         game_ui: GameUI = self.gm.get("游戏UI")
 
         # 道具锁定框
-        self.item_lock = SourceManager.ssurface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
-                                                      [20, 20])
+        self.item_lock = SourceManager.surface_scale(SourceManager.load(f"{SourceManager.ui_system_path}/lock_1.png"),
+                                                     [20, 20])
         # 道具描述UI的道具图片背景
-        self.icon_item_bg = SourceManager.ssurface_scale(
+        self.icon_item_bg = SourceManager.surface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/icon_skill_bg.png"), [60, 60])
 
-        shop_left_bg = SourceManager.ssurface_scale(
+        shop_left_bg = SourceManager.surface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/window_shop.png"),
             [250, self.shop_size[1] - 30])
         shop_right_bg = SourceManager.load(f"{SourceManager.ui_system_path}/window_empty.png")
-        shop_right_bg = SourceManager.ssurface_scale(shop_right_bg, [250, 290])
-        dialog_title = SourceManager.ssurface_scale(
+        shop_right_bg = SourceManager.surface_scale(shop_right_bg, [250, 290])
+        dialog_title = SourceManager.surface_scale(
             SourceManager.load(f"{SourceManager.ui_system_path}/dialog_title.png"), [self.shop_size[0], 32])
 
         shop_bg = pygame.Surface(tuple(self.shop_size), pygame.SRCALPHA)
@@ -270,28 +270,16 @@ class ShopSystem:
         """将传入的道具ID追加到商城"""
         self.__shop_type = shop_type
         self.r_items.clear()
+        self.items.clear()
         self.r_current_page = 1
         self.r_max_page = 1
         self.current_page = 1
         self.max_page = 1
-        # 传入的道具和当前已经创建的是否全部一致, 如果有不一致的那就清空当前的商城, 避免同一个NPC一直重复的创建Item
-        if len(self.items) == len(items) and shop_type == ShopType.BUY:
-            for i in range(len(self.items)):
-                if self.items[i].ID != items[i]:
-                    self.items.clear()
-                    break
-        else:
-            self.items.clear()
         game_ui: "GameUI" = self.gm.get("游戏UI")
         game_ui.set_btn_text("button_buy_UI", "购买" if shop_type == ShopType.BUY else "出售")
 
-        if len(self.items) == 0:
-            for item in items:
-                self.add_item(item)
-
-            self.update_blit = True
-            if game_ui.get_surface_show("游戏商城"):
-                return
+        for item in items:
+            self.add_item(item)
 
         if len(items) == 0:
             self.update_blit = True
@@ -327,9 +315,14 @@ class ShopSystem:
 
         new_item = Item(item_data)
         if self.__shop_type == ShopType.SELL:
+            new_item.UID = item.UID
             new_item.bind = item.bind
             new_item.count = item.count
+            new_item.quality = item.quality
             new_item.enhance_level = item.enhance_level
+            new_item.primary_attr_id = item.primary_attr_id
+            new_item.secondary_attr_id = item.secondary_attr_id
+            new_item.expire_time = item.expire_time
 
         self.items.append(new_item)
 
@@ -509,12 +502,6 @@ class ShopSystem:
                     GameToastManager.add_message(f"道具:[{item.name}]禁止交易")
                     return
             self.change_item(item)
-            if self.__select_item and self.__select_item.get("uid") == item.UID:
-                self.__select_item["count"] += 1
-                self.__select_item[
-                    "total_price"] = item.points if item.points > 0 and self.__shop_type == ShopType.BUY else item.money * \
-                                                                                                              self.__select_item[
-                                                                                                                  "count"]
         return
 
     def mouse_scroll_wheel_down(self):
@@ -655,6 +642,13 @@ class ShopSystem:
             bag_sur.blit(self.gm.game_font.get_text_surface_line(self.__select_item["total_price"], True, 13),
                          (115, 319))  # 总价
 
+        u_player = self.gm.get("主角")
+        if u_player and getattr(u_player, "bag", None):
+            bag_sur.blit(self.gm.game_font.get_text_surface_line(f"金币:{u_player.bag.money}", True, 12, "#FFE08A"),
+                         (260, 318))
+            bag_sur.blit(self.gm.game_font.get_text_surface_line(f"点卡:{u_player.bag.point}", True, 12, "#FFE08A"),
+                         (260, 338))
+
         # 渲染按钮
         for [rect, params] in self.__GUI_rect_list:
             btn_sort_frame_size = params.get("frame").get("size")
@@ -746,12 +740,17 @@ class ShopSystem:
         }
 
     def buy_shop(self):
-        if not self.__select_item:
+        if not self.r_items:
+            GameToastManager.add_message("请先选择要交易的道具")
             return
         u_player = self.gm.get("主角")
-        if u_player.bag.get_target_item_count(self.__select_item.get("ID"), self.__select_item.get("count")):
-            u_player.bag.add_item(self.__select_item.get("ID"), self.__select_item.get("count"))
-        self.clear_item()
+        if u_player is None or getattr(u_player, "bag", None) is None:
+            GameToastManager.add_message("交易失败: 未找到角色背包")
+            return
+        if self.__shop_type == ShopType.BUY:
+            self.__confirm_buy(u_player.bag)
+        else:
+            self.__confirm_sell(u_player.bag)
 
     # def btn_add(self):
     #     if not self.__select_item:
@@ -791,18 +790,18 @@ class ShopSystem:
                     if _item.UID == item.UID:
                         self.r_items.remove(_item)
                         break
-                total = 0
-                for _item in self.r_items:
-                    x, y, page = self.calc_page_loc(total)
-                    self.r_max_page = page + 1
-                    _item.set_pos(x, y, page)
-                    total += 1
+                self.__relayout_items(self.r_items, "R")
         else:
             # 出售道具的话直接扣减道具
             if box_target == "L":
+                if not item.can_trade or not item.can_shop or item.bind:
+                    GameToastManager.add_message(f"道具:[{item.name}]禁止交易")
+                    return
                 self.__append_r_item(item, False, True)
             else:
                 self.__append_l_item(item, False, True)
+        self.__sync_select_summary()
+        self.update_blit = True
 
     def calc_page_loc(self, item_len: int):
         """根据传入的背包计算对应的x,y,page"""
@@ -826,17 +825,11 @@ class ShopSystem:
         if remove_r:
             for __item in self.r_items:
                 if __item.UID == item.UID:
-                    self.items.remove(__item)
+                    self.r_items.remove(__item)
                     break
-
-            if len(self.r_items) <= self.max_capacity * (self.r_current_page - 1):
-                self.r_current_page = 1
-            total = 0
-            for _item in self.r_items:
-                x, y, page = self.calc_page_loc(total)
-                self.r_max_page = page + 1
-                _item.set_pos(x, y, page)
-                total += 1
+            self.__relayout_items(self.r_items, "R")
+            self.__relayout_items(self.items, "L")
+            return
 
     def __append_r_item(self, item: Item, is_clone: bool = True, remove_l: bool = None):
         if item.can_stack and self.__shop_type == ShopType.BUY:
@@ -859,25 +852,116 @@ class ShopSystem:
                 if __item.UID == item.UID:
                     self.items.remove(__item)
                     break
-            if len(self.items) <= self.max_capacity * (self.current_page - 1):
-                self.current_page = 1
-            total = 0
-            for _item in self.items:
-                x, y, page = self.calc_page_loc(total)
-                self.max_page = page + 1
-                _item.set_pos(x, y, page)
-                total += 1
+            self.__relayout_items(self.items, "L")
+            self.__relayout_items(self.r_items, "R")
 
-    def clear_item(self):
+    def __confirm_buy(self, bag):
+        total_money = sum(max(0, int(item.money or 0)) * max(1, int(item.count or 1)) for item in self.r_items)
+        total_points = sum(max(0, int(item.points or 0)) * max(1, int(item.count or 1)) for item in self.r_items)
+        if total_money > bag.money:
+            GameToastManager.add_message(f"金币不足, 需要 {total_money}")
+            return
+        if total_points > bag.point:
+            GameToastManager.add_message(f"点卡不足, 需要 {total_points}")
+            return
+        for item in self.r_items:
+            if not bag.get_target_item_count(item.ID, max(1, item.count)):
+                GameToastManager.add_message("背包空间不足")
+                return
+        bag.money -= total_money
+        bag.point -= total_points
+        for item in self.r_items:
+            bag.add_item(item.ID, max(1, item.count))
+        bag.update_blit = True
+        GameToastManager.add_message(f"购买成功, 花费金币:{total_money} 点卡:{total_points}")
+        self.clear_item(keep_goods=True)
+
+    def __confirm_sell(self, bag):
+        total_money = 0
+        sold_count = 0
+        for item in self.r_items[:]:
+            source_item = bag.get_item_by_uid(item.UID)
+            if source_item is None:
+                continue
+            if source_item.bind or not source_item.can_trade or not source_item.can_shop:
+                GameToastManager.add_message(f"道具:[{source_item.name}]禁止交易")
+                continue
+            total_money += max(0, int(source_item.money or 0)) * max(1, int(source_item.count or 1))
+            if bag.remove_item(source_item.UID):
+                sold_count += 1
+        if sold_count <= 0:
+            GameToastManager.add_message("没有可出售的道具")
+            return
+        bag.money += total_money
+        bag.update_blit = True
+        GameToastManager.add_message(f"出售成功, 获得金币:{total_money}")
+        self.r_items.clear()
+        self.__select_item = None
+        self.__hover_item = None
+        self.__curr_item_detail = None
+        self.__reload_sell_items()
+        self.__relayout_items(self.items, "L")
+        self.__relayout_items(self.r_items, "R")
+        self.update_blit = True
+
+    def __reload_sell_items(self):
+        if self.__shop_type != ShopType.SELL:
+            return
+        player = self.gm.get("主角")
+        if player is None or getattr(player, "bag", None) is None:
+            return
+        self.items.clear()
+        for item in player.bag.get_items_all():
+            self.add_item(item)
+
+    def __relayout_items(self, items: list[Item], side: str):
+        max_page = 1
+        for index, item in enumerate(items):
+            x, y, page = self.calc_page_loc(index)
+            max_page = max(max_page, page + 1)
+            item.set_pos(x, y, page)
+        if side == "L":
+            self.max_page = max_page
+            if self.current_page > self.max_page:
+                self.current_page = self.max_page
+        else:
+            self.r_max_page = max_page
+            if self.r_current_page > self.r_max_page:
+                self.r_current_page = self.r_max_page
+
+    def __sync_select_summary(self):
+        if not self.r_items:
+            self.__select_item = None
+            return
+        total_money = sum(max(0, int(item.money or 0)) * max(1, int(item.count or 1)) for item in self.r_items)
+        total_points = sum(max(0, int(item.points or 0)) * max(1, int(item.count or 1)) for item in self.r_items)
+        total_count = sum(max(1, int(item.count or 1)) for item in self.r_items)
+        item = self.r_items[-1]
+        self.__select_item = {
+            "ID": item.ID,
+            "pos": item.get_pos()[1:],
+            "texture": SourceManager.set_surface_alpha(item.avatar, 120),
+            "uid": item.UID,
+            "count": total_count,
+            "price": max(0, int(item.points or 0)) if item.points and self.__shop_type == ShopType.BUY else max(0, int(item.money or 0)),
+            "total_price": total_points if total_points > 0 and self.__shop_type == ShopType.BUY else total_money,
+            "target": "R",
+            "item": item
+        }
+
+    def clear_item(self, keep_goods: bool = False):
         """
-        清空已加入购入栏的道具
+        清空已加入购入/出售栏的道具
         :return:
         """
         self.r_items.clear()
         self.r_current_page = 1
         self.r_max_page = 1
-        self.current_page = 1
-        self.max_page = 1
+        if not keep_goods:
+            self.current_page = 1
+            self.max_page = 1
 
         self.__select_item = None
         self.__hover_item = None
+        self.__curr_item_detail = None
+        self.update_blit = True

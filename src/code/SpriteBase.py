@@ -198,35 +198,26 @@ class SpriteBase:
 
         if self.eff_animator_stick:
             self.eff_animator_stick.update(0.5, True)
+        # 战斗中单位名称/血条由战斗场景统一绘制，避免多单位层级不一致。
+        if BattleManager.battle_sta() and self.battle_state:
+            return
         # 如果当前有挑战的NPC
         if BattleManager.battle_sta() and not self.battle_state:
             return
 
-        if self.rect.x < 0 or self.rect.y < 0:
-            return
-
         view_width = GameManager.game_win_rect.width
         view_height = GameManager.game_win_rect.height
-        if self.rect.x > view_width or self.rect.y > view_height:
+        if self.rect.right < 0 or self.rect.bottom < 0 or self.rect.x > view_width or self.rect.y > view_height:
             return
-        render_x = self.rect.x
-        render_y = self.rect.y
-
-        # 使用统一的偏移量进行渲染
-        x_off = -(self.rect.width / 2)
-        y_off = - self.rect.height
-        if len(self.stand_offset) > 0:
-            ani_idx = self.animator.get_current_frame_absolute_index()
-            if len(self.stand_offset) > ani_idx:
-                x_off = self.stand_offset[ani_idx]["offX"]
-                y_off = self.stand_offset[ani_idx]["offY"]
+        foot_x, foot_y = self.get_screen_foot_pos()
+        x_off, y_off = self.get_render_offset()
         if self.has_behind:
             # 渲染精灵
             current_frame = self.animator.get_frame()
             if current_frame:
                 a = current_frame.copy()
                 a.set_alpha(150)
-                GameManager.game_win.blit(a, (render_x + x_off, render_y + y_off))
+                GameManager.game_win.blit(a, (foot_x + x_off, foot_y + y_off))
 
         # 绘制路径点和连接线
         if GameManager.has_debug_render:
@@ -241,7 +232,7 @@ class SpriteBase:
                 previous_pos = (local_x + 5, local_y + 5)
 
             # 基点
-            pygame.draw.rect(GameManager.game_win, (250, 0, 0), (render_x, render_y, 10, 10), 0)
+            pygame.draw.rect(GameManager.game_win, (250, 0, 0), (foot_x, foot_y, 10, 10), 0)
 
         camera_pos = GameManager.game_camera.get_position()
         trender_x = self.transform.x - camera_pos.x - (self.rect.width / 2)
@@ -262,9 +253,9 @@ class SpriteBase:
         # 渲染血条
         if self.battle_state and self.sprite_state != SpriteState.DEAD:
             pygame.draw.rect(GameManager.game_win, (100, 220, 100),
-                             (self.rect.x + self.rect.width // 2 - 25, render_y + 4, 50, 5), 1)
+                             (self.rect.x + self.rect.width // 2 - 25, foot_y + 4, 50, 5), 1)
             pygame.draw.rect(GameManager.game_win, (255, 10, 10),
-                             (self.rect.x + self.rect.width // 2 - 25, render_y + 5,
+                             (self.rect.x + self.rect.width // 2 - 25, foot_y + 5,
                               int(50 * self.healthy / self.max_healthy), 3), 0)
 
     def render_sticky(self):
@@ -287,6 +278,8 @@ class SpriteBase:
             if len(self.rect_list) > 0:
                 for e_index in range(len(self.rect_list)):
                     rect_e = self.rect_list[e_index]
+                    if rect_e.get("ignore_event"):
+                        continue
                     rect: pygame.Rect = rect_e.get("rect")
                     mask: pygame.Mask = rect_e.get("mask")
                     # 有mask就优先使用mask检测
@@ -452,6 +445,60 @@ class SpriteBase:
         if self.rect is None:
             return [self.transform.x, self.transform.y, 0, 0]
         return [self.transform.x, self.transform.y, self.rect.width, self.rect.height]
+
+    def get_world_foot_pos(self) -> tuple[float, float]:
+        """返回精灵脚底站位点的世界坐标.
+
+        transform 在地图移动里表示的是脚底/格子锚点, 不是图片左上角。
+        """
+        return self.transform.x, self.transform.y
+
+    def get_screen_foot_pos(self) -> tuple[float, float]:
+        """返回精灵脚底站位点的屏幕坐标."""
+        from src.manager.GameManager import GameManager
+        camera_pos = GameManager.game_camera.get_position()
+        return self.transform.x - camera_pos.x, self.transform.y - camera_pos.y
+
+    def get_render_offset(self) -> tuple[float, float]:
+        """返回当前帧相对脚底锚点的绘制偏移."""
+        if self.rect is None:
+            return 0, 0
+
+        x_off = -(self.rect.width / 2)
+        y_off = -self.rect.height
+        offsets = self.move_offset if self.sprite_state == SpriteState.WALK and self.move_offset else self.stand_offset
+        if offsets and self.animator:
+            ani_idx = self.animator.get_current_frame_absolute_index()
+            if len(offsets) > ani_idx:
+                x_off = offsets[ani_idx].get("offX", x_off)
+                y_off = offsets[ani_idx].get("offY", y_off)
+        return x_off, y_off
+
+    def sync_rect_to_foot(self):
+        """用当前脚底点和帧偏移刷新屏幕 rect."""
+        if self.rect is None:
+            return
+        foot_x, foot_y = self.get_screen_foot_pos()
+        x_off, y_off = self.get_render_offset()
+        self.rect.x = int(foot_x + x_off)
+        self.rect.y = int(foot_y + y_off)
+
+    def get_render_sort_y(self) -> float:
+        """用于 2.5D 场景前后遮挡排序: 脚底越靠下, 越后渲染."""
+        return self.transform.y
+
+    def foot_distance_to(self, target: "SpriteBase") -> float:
+        sx, sy = self.get_world_foot_pos()
+        tx, ty = target.get_world_foot_pos()
+        return math.hypot(sx - tx, sy - ty)
+
+    def is_near_sprite(self, target: "SpriteBase", radius: int = None) -> bool:
+        if target is None:
+            return False
+        if radius is None:
+            from src.manager.GameManager import GameManager
+            radius = GameManager.game_box_size * 2
+        return self.foot_distance_to(target) <= radius
 
     # def get_pos(self):
     #     """返回当前角色的屏幕坐标
@@ -676,7 +723,7 @@ class SpriteBase:
         if actor_data.get("站立偏移"):
             self.stand_offset = SourceManager.load_sprite_offset_config(actor_data.get("站立偏移"))
         if actor_data.get("移动偏移"):
-            self.stand_offset = SourceManager.load_sprite_offset_config(actor_data.get("移动偏移"))
+            self.move_offset = SourceManager.load_sprite_offset_config(actor_data.get("移动偏移"))
 
         self.stand_model = [int(i) for i in actor_data.get("站立轴").split(",")]
         self.move_model = [int(i) for i in actor_data.get("移动轴").split(",")]

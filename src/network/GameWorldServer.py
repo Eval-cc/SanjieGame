@@ -276,15 +276,23 @@ class GameWorldServer(SpriteBase):
             if message is None or player_id is None:
                 GameToastManager.add_message("异常.无法接收服务器消息")
                 return
+            if player_id == self.player_id:
+                return
             player_name = self.players.get(player_id, {}).get('name', '未知玩家')
             chat_text = f"{player_name}: {message}"
+            item_links = data.get("itemLinks") or data.get("item_links") or []
 
             self.chat_messages.append(chat_text)
             if len(self.chat_messages) > 10:
                 self.chat_messages = self.chat_messages[-10:]
 
             if self.on_chat_message:
-                self.on_chat_message(player_id, player_name, message)
+                try:
+                    self.on_chat_message(player_id, player_name, message, item_links)
+                except TypeError:
+                    self.on_chat_message(player_id, player_name, message)
+            elif getattr(self.gm, "chat_system", None):
+                self.gm.chat_system.receive_network_message(player_name, message, item_links=item_links)
 
     def _serialize_sprite_data(self, sprite: SpriteBase) -> Dict[str, Any]:
         """序列化精灵数据 - 只使用 user 的属性"""
@@ -474,13 +482,30 @@ class GameWorldServer(SpriteBase):
     #             'attributes': self.player_sprite
     #         })
 
-    def send_chat(self, message: str):
+    def send_chat(self, message: str, item_links: list[dict] | None = None):
         """发送聊天消息"""
         if self.connected and self.room_id and message.strip():
-            self.send_msg('chat_message', {
+            payload = {
                 'roomId': self.room_id,
                 'message': message.strip()
+            }
+            if item_links:
+                payload["itemLinks"] = self.__serialize_chat_item_links(item_links)
+            self.send_msg('chat_message', payload)
+
+    @staticmethod
+    def __serialize_chat_item_links(item_links: list[dict]):
+        result = []
+        for link in item_links:
+            snapshot = link.get("snapshot")
+            if not snapshot:
+                continue
+            result.append({
+                "label": link.get("label", ""),
+                "snapshot_id": link.get("snapshot_id", ""),
+                "snapshot": snapshot,
             })
+        return result
 
     def change_room(self, new_room_id: str):
         """

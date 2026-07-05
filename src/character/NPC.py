@@ -61,6 +61,8 @@ class NpcSprite(SpriteBase):
         self.frame_delay = 2  # 每 2 帧更新一次
 
         self.has_dialog = False
+        self.__pending_player_action = None
+        self.__pending_player_action_time = 0
 
         self.__init_status()
         # 加载动画
@@ -138,8 +140,8 @@ class NpcSprite(SpriteBase):
             fw, fh = image.get_width() // cols, image.get_height() // rows
             # 模型是否有缩放
             if self.scale_texture != 1:
-                image = SourceManager.ssurface_scale(image, [image.get_width() * self.scale_texture,
-                                                             image.get_height() * self.scale_texture])
+                image = SourceManager.surface_scale(image, [image.get_width() * self.scale_texture,
+                                                            image.get_height() * self.scale_texture])
                 fw *= self.scale_texture
                 fh *= self.scale_texture
 
@@ -192,18 +194,16 @@ class NpcSprite(SpriteBase):
 
     def render(self):
         self.move()
-        camera_pos = GameManager.game_camera.get_position()
-        render_x = self.transform.x - camera_pos.x
-        render_y = self.transform.y - camera_pos.y
-        # ui相关的坐标, 如:名称
-        self.rect.x = render_x
-        self.rect.y = render_y
         # 如果当前有挑战的NPC
         if BattleManager.battle_sta() and self.sprite_state != SpriteState.ATTACK and self.sprite_state != SpriteState.DEAD:
             return
 
         # 随机移动-- 允许不再视野内的时候也移动, 增加真实性
         self.update_random_move()
+        self.sync_rect_to_foot()
+        u_player: SpriteBase = GameManager.get("主角")
+        if u_player:
+            self.__try_exec_pending_player_action(u_player)
         # 超过视图区域的就不显示了
         if self.rect.x + self.rect.width < 0 or self.rect.y + self.rect.height < 0:
             return
@@ -223,94 +223,15 @@ class NpcSprite(SpriteBase):
         # self.eff_animator_floor.render(cpos[0], cpos[1] + 20, center=True)
         #
 
-        x_off = -(self.rect.width / 2)
-        y_off = - self.rect.height
-        if len(self.stand_offset) > 0:
-            ani_idx = self.animator.get_current_frame_absolute_index()
-            if len(self.stand_offset) > ani_idx:
-                x_off = self.stand_offset[ani_idx]["offX"]
-                y_off = self.stand_offset[ani_idx]["offY"]
         # 渲染精灵
         current_frame = self.animator.get_frame()
-        if current_frame and not self.has_behind:
-            GameManager.game_win.blit(current_frame, (render_x + x_off, render_y + y_off))
+        if current_frame:
+            GameManager.game_win.blit(current_frame, self.rect.topleft)
 
         if GameManager.has_debug_render:
-            pygame.draw.rect(GameManager.game_win, (100, 220, 100),
-                             (
-                                 self.rect.x - self.rect.width // 2, render_y - self.rect.height,
-                                 self.rect.width, self.rect.height
-                             )
-                             , 1)
-
-    # 该方法已经放入精灵基类进行统一渲染
-    # def render_mask(self):
-    #     self.eff_animator_stick.update(0.5, True)
-    #     # 如果当前有挑战的NPC
-    #     if BattleManager.battle_sta() and not self.battle_state:
-    #         return
-    #
-    #     if self.rect.x < 0 or self.rect.y < 0:
-    #         return
-    #
-    #     view_width = GameManager.game_win_rect.width
-    #     view_height = GameManager.game_win_rect.height
-    #     if self.rect.x > view_width or self.rect.y > view_height:
-    #         return
-    #     render_x = self.rect.x
-    #     render_y = self.rect.y
-    #
-    #     # 使用统一的偏移量进行渲染
-    #     x_off = -(self.rect.width / 2)
-    #     y_off = - self.rect.height
-    #     if len(self.stand_offset) > 0:
-    #         ani_idx = self.animator.get_current_frame_absolute_index()
-    #         if len(self.stand_offset) > ani_idx:
-    #             x_off = int(self.stand_offset[ani_idx]["offX"])
-    #             y_off = int(self.stand_offset[ani_idx]["offY"])
-    #     if self.has_behind:
-    #         # 渲染精灵
-    #         current_frame = self.animator.get_frame()
-    #         if current_frame:
-    #             a = current_frame.copy()
-    #             a.set_alpha(150)
-    #             GameManager.game_win.blit(a, (render_x + x_off, render_y + y_off))
-    #
-    #     # 绘制路径点和连接线
-    #     if GameManager.has_debug_render:
-    #         previous_pos = None
-    #         for pos in self.current_path:
-    #             local_x, local_y = GameManager.global_to_scene_pos(pos[0], pos[1])
-    #             # 画点
-    #             pygame.draw.rect(GameManager.game_win, (250, 250, 250), (local_x, local_y, 10, 10), 0)
-    #             # 画线（连接前一个点到当前点）
-    #             if previous_pos is not None:
-    #                 pygame.draw.line(GameManager.game_win, (100, 255, 100), previous_pos, (local_x + 5, local_y + 5), 2)
-    #             previous_pos = (local_x + 5, local_y + 5)
-    #
-    #         # 基点
-    #         pygame.draw.rect(GameManager.game_win, (250, 0, 0), (render_x, render_y, 10, 10), 0)
-    #
-    #     # 绘制名称
-    #     GameFont.render_line_text(f"{self.name}",
-    #                               max(
-    #                                   10,
-    #                                   int(render_x + self.rect.width / 2 - GameFont.get_text_size(f"{self.name}")[
-    #                                       0] / 2)
-    #                               ),
-    #                               max(
-    #                                   10,
-    #                                   render_y - 10
-    #                               ), True,
-    #                               font_color="#FF7F24")
-    #
-    #     # 渲染血条
-    #     if self.battle_state and self.sprite_state != SpriteState.DEAD:
-    #         pygame.draw.rect(GameManager.game_win, (100, 220, 100),
-    #                          (self.rect.x + self.rect.width // 2 - 25, render_y + 4, 50, 5), 1)
-    #         pygame.draw.rect(GameManager.game_win, (255, 10, 10),
-    #                          (self.rect.x + self.rect.width // 2 - 25, render_y + 5,
-    #                           int(50 * self.healthy / self.max_healthy), 3), 0)
+            pygame.draw.rect(GameManager.game_win, (100, 220, 100), self.rect, 1)
+            foot_x, foot_y = self.get_screen_foot_pos()
+            pygame.draw.circle(GameManager.game_win, (250, 0, 0), (int(foot_x), int(foot_y)), 4)
 
     def move(self):
         """根据路径数组移动角色"""
@@ -403,66 +324,54 @@ class NpcSprite(SpriteBase):
         """
         u_player: SpriteBase = GameManager.get("主角")
         if u_player:
-            play_pos = u_player.get_pos_world()
-            camera_pos = GameManager.game_camera.get_position()
-            px = play_pos[0] - camera_pos.x
-            py = play_pos[1] - camera_pos.y
-            if self.rect.collidepoint(px, py):
-                # print(f"碰到了:{self.name}")
-                # 获取玩家脚部位置（通常是玩家坐标的底部）
-                player_foot_y = play_pos[1] + play_pos[3]  # 假设height是精灵高度
+            self.has_behind = False
 
-                # 获取NPC的中心位置
-                npc_center_y = self.transform.y + self.height / 2
-                self.has_behind = player_foot_y > npc_center_y
-                # 如果玩家的脚在NPC中心的下方，视为在背面
-                # if self.has_behind:
-                #     print(f"玩家在NPC背面:{self.name}")
-            else:
-                self.has_behind = False
+            self.__try_exec_pending_player_action(u_player)
 
             if not self.has_dialog:
                 return
-            npc_pos = self.get_pos_world()
             diff_distance = 200
             # 距离太远的不触发点击事件
-            if (abs(play_pos[0] - npc_pos[0]) > diff_distance or abs(play_pos[1] - npc_pos[1]) > diff_distance) \
-                    or play_pos[0] > npc_pos[0] + npc_pos[2] + diff_distance \
-                    or play_pos[0] < npc_pos[0] - diff_distance \
-                    or play_pos[1] > npc_pos[1] + npc_pos[3] + diff_distance \
-                    or play_pos[1] < npc_pos[1] - diff_distance:
+            if self.foot_distance_to(u_player) > diff_distance:
                 GameManager.game_dialog.close_dialog()
 
     def has_clicked_condition(self, target=None):
-        if BattleManager.battle_sta() and self.sprite_state == SpriteState.ATTACK:
+        if BattleManager.battle_sta():
+            if self.sprite_state != SpriteState.ATTACK:
+                return False
             # 如果是攻击状态, 那就判断鼠标是否位于这个位置
             _x, _y = pygame.mouse.get_pos()
             if self.rect.collidepoint(_x, _y):
                 return True
             return False
 
-        # 计算实际交互距离
-        return self.rect.colliderect(GameManager.get("主角").rect)
+        return True
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         if BattleManager.battle_sta():
             return
-        GameManager.get("主角").stop_moving()
-        if len(self.default_dialog) > 0:
-            # 修改当前NPC的朝向 面对主角
-            next_target = GameManager.get("主角").get_pos_world()
-            self.update_direction(next_target[0] - self.transform.x,
-                                  next_target[1] - self.transform.y)
-            self.has_dialog = True
-            GameManager.game_dialog.show_dialog(self.default_dialog, self)
-            return
+        player = GameManager.get("主角")
+        if player is None:
+            return False
+        if not self.__is_player_in_chase_range(player):
+            self.__pending_player_action = None
+            return True
+        self.__pending_player_action = "interact"
+        self.__pending_player_action_time = time.time()
+        self.stop_moving()
+        if self.__is_player_in_interact_range(player):
+            self.__exec_player_action(player)
+            return False
+        if not self.__walk_player_near_me(player):
+            self.__pending_player_action = None
+        return False
 
     def update_random_move(self):
         """检测是否需要随机移动"""
         if self.random_move_radius == 0:
             if not self.mandatory:
                 return  # 此NPC未指定巡逻范围- 且不允许强制移动
-        if self.sprite_state == SpriteState.WALK or self.has_dialog or self.battle_state:
+        if self.sprite_state == SpriteState.WALK or self.has_dialog or self.battle_state or self.__pending_player_action:
             return  # 正在移动/或者战斗 就不打断
 
         now = time.time()
@@ -492,6 +401,88 @@ class NpcSprite(SpriteBase):
 
     def hide_dialog(self):
         self.has_dialog = False
+
+    def __interact_radius(self):
+        """实际执行对话/挑战的距离，用脚底点计算，避免要求玩家贴进贴图里。"""
+        return max(GameManager.game_box_size * 6, 120)
+
+    def __chase_interact_radius(self):
+        """超过这个距离时，点击NPC只按普通地图点击处理，不让NPC原地等待玩家。"""
+        return max(GameManager.game_box_size * 12, self.__interact_radius() * 2)
+
+    def __is_player_in_interact_range(self, player: SpriteBase):
+        return self.foot_distance_to(player) <= self.__interact_radius()
+
+    def __is_player_in_chase_range(self, player: SpriteBase):
+        return self.foot_distance_to(player) <= self.__chase_interact_radius()
+
+    def __try_exec_pending_player_action(self, player: SpriteBase):
+        if not self.__pending_player_action:
+            return
+        if time.time() - self.__pending_player_action_time > 20:
+            self.__pending_player_action = None
+            return
+        if self.__is_player_in_interact_range(player):
+            self.__exec_player_action(player)
+
+    def __exec_player_action(self, player: SpriteBase):
+        self.__pending_player_action = None
+        player.stop_moving()
+
+        next_target = player.get_pos_world()
+        self.update_direction(next_target[0] - self.transform.x,
+                              next_target[1] - self.transform.y)
+
+        if len(self.default_dialog or "") > 0:
+            self.has_dialog = True
+            GameManager.game_dialog.show_dialog(self.default_dialog, self)
+            return
+
+        if self.type == 2:
+            self.battle()
+
+    def __walk_player_near_me(self, player: SpriteBase):
+        target_grid = self.__find_near_player_grid(player)
+        if target_grid is None:
+            return False
+        find_path = GameManager.find_path(target_grid, GameMapManager.game_map_passable())
+        if find_path:
+            click_effect = GameManager.get("点击特效系统")
+            if click_effect:
+                click_effect.add_world(target_grid[0] * GameManager.game_box_size,
+                                       target_grid[1] * GameManager.game_box_size)
+            return True
+        return False
+
+    def __find_near_player_grid(self, player: SpriteBase):
+        passable = GameMapManager.game_map_passable()
+        if not passable:
+            return None
+        gx = int(self.transform.x // GameManager.game_box_size)
+        gy = int(self.transform.y // GameManager.game_box_size)
+        candidates = []
+        for radius in range(1, 6):
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    nx, ny = gx + dx, gy + dy
+                    if self.__is_passable_cell(passable, nx, ny):
+                        candidates.append((nx, ny))
+            if candidates:
+                px, py = player.scene_pos
+                return min(candidates, key=lambda p: (p[0] - px) ** 2 + (p[1] - py) ** 2)
+        return (gx, gy)
+
+    @staticmethod
+    def __is_passable_cell(passable: list, x: int, y: int):
+        if not passable:
+            return False
+        if y < 0 or y >= len(passable):
+            return False
+        if x < 0 or x >= len(passable[y]):
+            return False
+        return str(passable[y][x]) != "0"
 
     def battle(self):
         """

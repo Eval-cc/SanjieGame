@@ -33,6 +33,7 @@ from src.system.GameTipDialog import GameDialogBoxManager
 from src.system.GameToast import GameToastManager
 from src.system.ShopSystem import ShopSystem
 from src.system.WeatherSystem import WeatherSystem
+from src.system.ClickEffectSystem import ClickEffectSystem
 
 if TYPE_CHECKING:
     from src.manager.GameCamera import GameCamera
@@ -84,6 +85,7 @@ class GameManager:
     __manager_dict = {}
     """全局游戏静态类管理映射"""
     shop_system: "ShopSystem" = None
+    chat_system = None
 
     weather_sys:"WeatherSystem" = None
     """天气系统"""
@@ -133,6 +135,7 @@ class GameManager:
 
         cls.weather_sys = WeatherSystem(cls)
         cls.add("天气系统", cls.weather_sys)
+        cls.add("点击特效系统", ClickEffectSystem(cls))
 
     @classmethod
     def __refresh_layer(cls):
@@ -209,6 +212,34 @@ class GameManager:
         return __arr
 
     @classmethod
+    def __is_passable_cell(cls, passable: list, x: int, y: int) -> bool:
+        if not passable:
+            return False
+        if y < 0 or y >= len(passable):
+            return False
+        if x < 0 or x >= len(passable[y]):
+            return False
+        return str(passable[y][x]) != "0"
+
+    @classmethod
+    def __nearest_passable_cell(cls, passable: list, pos: tuple[int, int], max_radius: int = 8) -> tuple[int, int] | None:
+        x, y = pos
+        if cls.__is_passable_cell(passable, x, y):
+            return pos
+        for radius in range(1, max_radius + 1):
+            candidates = []
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    nx, ny = x + dx, y + dy
+                    if cls.__is_passable_cell(passable, nx, ny):
+                        candidates.append((nx, ny))
+            if candidates:
+                return min(candidates, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)
+        return None
+
+    @classmethod
     def render(cls):
         """全局游戏渲染管理器"""
         # 渲染地板
@@ -250,8 +281,10 @@ class GameManager:
             # NPC 用这个寻路
             pathfinder = ThetaStarPathfinder(passable)  # ThetaStarPathfinder
             # NPC：直接计算路径，不遍历 find_path_list
-            start = (start_pos[0], start_pos[1])
-            end = (target_pos[0], target_pos[1])
+            start = cls.__nearest_passable_cell(passable, (start_pos[0], start_pos[1]))
+            end = cls.__nearest_passable_cell(passable, (target_pos[0], target_pos[1]))
+            if start is None or end is None:
+                return []
             path = pathfinder.find_path(start, end)
             if path:
                 path_list = path
@@ -261,13 +294,19 @@ class GameManager:
             pathfinder = AStarPathfinder(passable)
             end = (target_pos[0], target_pos[1])
             for en in GameManager.find_path_list:
-                en["stop_moving"]()
                 get_pos = en.get("get_pos")
                 if get_pos is None:
                     GameLogManager.log_service_debug("无法找到当前精灵的get_pos方法 @return (x,y)")
                     continue
 
-                start = get_pos()
+                start = cls.__nearest_passable_cell(passable, tuple(get_pos()))
+                if start is None:
+                    GameLogManager.log_service_debug("寻路失败, 当前角色附近没有可通行格子")
+                    continue
+                end = cls.__nearest_passable_cell(passable, end)
+                if end is None:
+                    GameLogManager.log_service_debug("寻路失败, 目标点附近没有可通行格子")
+                    continue
                 path = pathfinder.find_path(start, end)
                 if path:
                     en["move"](path)
@@ -346,8 +385,12 @@ class GameManager:
         """
         from src.manager.GameMapManager import GameMapManager
         from src.render.GameLogin import GameLogin
+        if cls.chat_system:
+            cls.chat_system.close()
+            cls.chat_system = None
         if cls.shop_system:
             del cls.shop_system
+            cls.shop_system = None
 
         game_ui: "GameUI" = cls.get("游戏UI")
         if game_ui:

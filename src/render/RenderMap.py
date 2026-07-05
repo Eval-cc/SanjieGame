@@ -173,6 +173,11 @@ class RenderMap(SpriteBase):
         localX, localY = GameManager.scene_to_global_pos_box(x, y)
         # 执行寻路
         find_path = GameManager.find_path([localX, localY], GameMapManager.game_map_passable())
+        if find_path:
+            click_effect = GameManager.get("点击特效系统")
+            if click_effect:
+                world_x, world_y = GameManager.scene_to_global_pos(x, y)
+                click_effect.add_world(world_x, world_y)
 
         # camera_pos = GameManager.game_camera.get_position()
         # GameLogManager.log_service_debug(f"""
@@ -267,8 +272,8 @@ class RenderMap(SpriteBase):
                     mask_top <= view_y + view_height and  # 遮罩下边界 >= 相机上边界
                     mask_bottom >= view_y):  # 遮罩上边界 <= 相机下边界
                 if mask.get("surface") is None and mask.get("path") is not None:
-                    mask["surface"] = SourceManager.ssurface_scale(SourceManager.load(mask.get("path")),
-                                                                 [mask.get("width"), mask.get("height")])
+                    mask["surface"] = SourceManager.surface_scale(SourceManager.load(mask.get("path")),
+                                                                  [mask.get("width"), mask.get("height")])
                 if mask["surface"] is None:
                     continue
                 mask_surface.blit(mask["surface"], (mask_x, mask_y))

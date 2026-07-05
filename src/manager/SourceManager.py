@@ -15,7 +15,6 @@ import sys
 from typing import Dict
 from copy import deepcopy
 import imageio
-import numpy as np
 import pygame
 
 from src.manager.GameLogManger import GameLogManager
@@ -180,7 +179,7 @@ class SourceManager:
         if SourceManager.__source_dict.get(file_path):
             # 是否指定了缩放
             if scale:
-                return SourceManager.ssurface_scale(SourceManager.__source_dict[file_path], scale)
+                return SourceManager.surface_scale(SourceManager.__source_dict[file_path], scale)
             return SourceManager.__source_dict[file_path]
         try:
             if file_name.lower().endswith(".png"):
@@ -197,7 +196,7 @@ class SourceManager:
                     frame_count = sur.get("len")
                     # 2. 重新计算总宽度，确保不丢失精度
                     total_scale_w = target_w * frame_count
-                    sur["surface"] = SourceManager.ssurface_scale(sur.get("surface"), [total_scale_w, target_h])
+                    sur["surface"] = SourceManager.surface_scale(sur.get("surface"), [total_scale_w, target_h])
 
                     # 因为旧 rects 包含了居中偏移量，我们要的是铺满整个 target_h
                     new_rects = []
@@ -212,7 +211,7 @@ class SourceManager:
                 raise Exception(f"暂不支持的文件类型,{file_name.split(".").pop()}")
             # 是否指定了缩放
             if scale:
-                return SourceManager.ssurface_scale(SourceManager.__source_dict[file_path], scale)
+                return SourceManager.surface_scale(SourceManager.__source_dict[file_path], scale)
             return SourceManager.__source_dict[file_path]
         except pygame.error as e:
             if str(e).find("Unsupported image format") >= 0:
@@ -277,7 +276,7 @@ class SourceManager:
         GameLogManager.log_service_debug(f"加载脚本: {csv_name} 完成")
 
     @staticmethod
-    def ssurface_scale(surface: pygame.Surface, size: list[float | int]):
+    def surface_scale(surface: pygame.Surface, size: list[float | int]):
         """平滑的将surface缩放到任意大小"""
         if surface is None:
             return surface

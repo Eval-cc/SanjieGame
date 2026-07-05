@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat</title>
+</head>
+<body>
+<div id="app" width="360" height="190" close="false" padding="0 8 0 8">
+    <p color="#8AD7FF" font-size="12">聊天</p>
+    <div id="chat_messages" height="84">
+        {{CHAT_MESSAGES}}
+    </div>
+    <row>
+        <input id="chat_input" type="text" width="265" height="24" placeholder="输入聊天或 -help" @submit="chat_submit" @history="chat_history"/>
+        <button id="chat_send_btn" width="56" height="24" @click="chat_send">发送</button>
+    </row>
+</div>
+</body>
+</html>
