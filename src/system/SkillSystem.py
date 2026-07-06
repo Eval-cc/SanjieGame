@@ -127,23 +127,27 @@ class SkillSystem:
         return list(cls._skills.values())
 
     @classmethod
-    def get_current_skills(cls, actor=None) -> list[SkillConfig]:
+    def get_current_skills(cls, actor=None, include_unlearned: bool = True) -> list[SkillConfig]:
         cls.load()
         result = []
         for group_skills in cls._skill_group_index.values():
-            candidates = cls._sort_group_skills(group_skills)
+            candidates = cls._effective_group_skills(group_skills)
             group_id = candidates[0].group_id
-            result.append(cls.get_current_skill(actor, group_id) or candidates[0])
+            current_skill = cls.get_current_skill(actor, group_id)
+            if current_skill is not None:
+                result.append(current_skill)
+            elif include_unlearned:
+                result.append(candidates[0])
         return sorted(result, key=lambda s: (s.tree_row, s.tree_col, s.order, s.name))
 
     @classmethod
     def get_current_skill(cls, actor, group_id: str) -> Optional[SkillConfig]:
         cls.load()
-        candidates = cls._sort_group_skills(cls._skill_group_index.get(group_id, []))
+        candidates = cls._effective_group_skills(cls._skill_group_index.get(group_id, []))
         if not candidates:
             return None
         learned_level = cls.get_actor_skill_level(actor, group_id)
-        current = candidates[0]
+        current = None
         for skill in candidates:
             if skill.skill_level <= learned_level:
                 current = skill
@@ -157,19 +161,17 @@ class SkillSystem:
         if skill is None:
             return None
         learned_level = cls.get_actor_skill_level(actor, skill.group_id)
-        for candidate in cls._sort_group_skills(cls._skill_group_index.get(skill.group_id, [])):
+        for candidate in cls._effective_group_skills(cls._skill_group_index.get(skill.group_id, [])):
             if candidate.skill_level > learned_level:
                 return candidate
         return None
 
     @classmethod
     def get_actor_skill_level(cls, actor, group_id: str) -> int:
-        candidates = cls._sort_group_skills(cls._skill_group_index.get(group_id, []))
-        base_level = candidates[0].skill_level if candidates else 1
         if actor is None:
-            return base_level
+            return 0
         levels = cls.ensure_actor_skill_levels(actor)
-        return cls._to_int(levels.get(group_id), base_level)
+        return cls._to_int(levels.get(group_id), 0)
 
     @classmethod
     def ensure_actor_skill_levels(cls, actor) -> dict:
@@ -211,9 +213,9 @@ class SkillSystem:
         actor_level = int(getattr(actor, "level", 1) or 1)
         if actor_level < next_skill.required_level:
             return False, f"角色等级不足, 需要 {next_skill.required_level} 级", next_skill
-        sp_value = cls._get_actor_resource(actor, ("skill_points", "skill_point", "sp"))
-        if sp_value is not None and sp_value < next_skill.sp_cost:
-            return False, f"技能点不足, 需要 {next_skill.sp_cost}", next_skill
+        sp_value = cls.get_actor_sp(actor)
+        if sp_value < next_skill.sp_cost:
+            return False, f"技能点不足, 需要 {next_skill.sp_cost}, 当前 {sp_value}", next_skill
         exp_value = cls._get_actor_resource(actor, ("curr_exp", "exp", "experience"))
         if exp_value is not None and exp_value < next_skill.upgrade_exp:
             return False, f"经验不足, 需要 {next_skill.upgrade_exp}", next_skill
@@ -224,11 +226,28 @@ class SkillSystem:
         can_upgrade, message, next_skill = cls.can_upgrade(actor, skill)
         if not can_upgrade:
             return False, message, next_skill
+        learned_level = cls.get_actor_skill_level(actor, next_skill.group_id)
         cls._consume_actor_resource(actor, ("skill_points", "skill_point", "sp"), next_skill.sp_cost)
         cls._consume_actor_resource(actor, ("curr_exp", "exp", "experience"), next_skill.upgrade_exp)
         levels = cls.ensure_actor_skill_levels(actor)
         levels[next_skill.group_id] = next_skill.skill_level
+        if learned_level <= 0:
+            return True, f"学会了 {next_skill.name} Lv.{next_skill.skill_level}", next_skill
         return True, f"{next_skill.name} 升级到 Lv.{next_skill.skill_level}", next_skill
+
+    @classmethod
+    def get_actor_sp(cls, actor) -> int:
+        sp_value = cls._get_actor_resource(actor, ("skill_points", "skill_point", "sp"))
+        return 0 if sp_value is None else sp_value
+
+    @classmethod
+    def serialize_actor_skill_levels(cls, actor) -> str:
+        levels = cls.ensure_actor_skill_levels(actor)
+        return "|".join(
+            f"{key}:{int(value)}"
+            for key, value in sorted(levels.items(), key=lambda item: str(item[0]))
+            if str(key)
+        )
 
     @classmethod
     def get(cls, skill_id: str = None, name: str = None) -> Optional[SkillConfig]:
@@ -399,11 +418,13 @@ class SkillSystem:
 
     @classmethod
     def write_battle_skill_dialog(cls, actor=None) -> str:
-        skills = cls.get_current_skills(actor)
+        skills = cls.get_current_skills(actor, include_unlearned=False)
         path = os.path.join(SourceManager.cfg_task_path, "__skill_choose_generated.html")
         items = []
         for skill in skills:
             items.append(cls._skill_icon_li(skill, 44, 6, "#ece4d0"))
+        if not items:
+            items.append('<p color="#d8c188">暂无已学技能</p>')
         cls._write_dialog(path, 235, 260, "\n".join(items), close="true")
         return path
 
@@ -421,7 +442,7 @@ class SkillSystem:
                 col += 1
             row_slots[col] = skill
 
-        body = ['<p color="#f3e6bf" font-size="15">角色技能</p>']
+        body = [f'<p color="#f3e6bf" font-size="15">角色技能    SP:{cls.get_actor_sp(actor)}</p>']
         if not rows:
             body.append('<p color="#d8c188">暂无技能</p>')
 
@@ -446,7 +467,7 @@ class SkillSystem:
     def write_skill_book_dialog(cls, actor=None) -> str:
         skills = cls.get_current_skills(actor)
         path = os.path.join(SourceManager.cfg_task_path, "__skill_book_generated.html")
-        items = []
+        items = [f'<p color="#f3e6bf" font-size="14">当前SP:{cls.get_actor_sp(actor)}</p>']
         for skill in skills:
             items.append(cls._skill_icon_li(skill, 54, 8, "#efe6d6"))
         cls._write_dialog(path, 390, 330, "\n".join(items), close="true")
@@ -460,38 +481,62 @@ class SkillSystem:
         next_skill = cls.get_next_skill(actor, skill)
         can_upgrade, upgrade_tip, _ = cls.can_upgrade(actor, skill)
         skill_name = escape(str(skill.name))
-        description = escape(skill.description or "暂无技能说明")
+        description_html = "\n".join(
+            f'<p color="#3b2c14" font-size="12">{escape(line)}</p>'
+            for line in cls._wrap_detail_text(skill.description or "暂无技能说明", 23)
+        )
         upgrade_tip = escape(upgrade_tip)
+        current_sp = cls.get_actor_sp(actor)
+        learned_level = cls.get_actor_skill_level(actor, skill.group_id)
+        is_learned = learned_level >= skill.skill_level
+        display_level = skill.skill_level if is_learned else 0
+        action_name = "学习" if next_skill and learned_level <= 0 else "升级"
         if next_skill:
             upgrade_body = (
                 f'<p>下一等级: Lv.{next_skill.skill_level}    需求等级: {next_skill.required_level}</p>'
-                f'<p>升级消耗: 经验 {next_skill.upgrade_exp}    SP {next_skill.sp_cost}</p>'
+                f'<p>{action_name}消耗: 经验 {next_skill.upgrade_exp}    SP {next_skill.sp_cost}</p>'
                 f'<p>{upgrade_tip}</p>'
                 f'<button id="skill_upgrade_btn" width="92" height="26" @click="skill_upgrade">'
-                f'{"升级" if can_upgrade else "无法升级"}</button>'
+                f'{action_name if can_upgrade else "无法" + action_name}</button>'
             )
         else:
             upgrade_body = '<p>已经达到最高等级</p>'
         body = (
-            f'<ul width="320" margin="5">'
-            f'<li width="300" height="56" margin="5" padding="4" align-items="center" background-color="#efe6d6">'
-            f'{icon_html}<p>{skill_name} Lv.{skill.skill_level}</p>'
+            f'<ul width="350" margin="5">'
+            f'<li width="330" height="56" margin="5" padding="4" align-items="center" background-color="#efe6d6">'
+            f'{icon_html}<p>{skill_name} Lv.{display_level}</p>'
             f'</li>'
             f'</ul>'
-            f'<p>需求等级: {skill.required_level}    消耗MP: {skill.mp_cost}</p>'
-            f'<p>目标类型: {area_label}    目标数量: {skill.target_count or 1}</p>'
-            f'<p>打击次数: {skill.hit_times}</p>'
-            f'<p>基础伤害: {skill.damage}</p>'
-            f'<p>{description}</p>'
+            f'<p font-size="12">当前SP: {current_sp}    已学等级: Lv.{learned_level}</p>'
+            f'<p font-size="12">需求等级: {skill.required_level}    消耗MP: {skill.mp_cost}</p>'
+            f'<p font-size="12">目标类型: {area_label}    目标数量: {skill.target_count or 1}</p>'
+            f'<p font-size="12">打击次数: {skill.hit_times}    基础伤害: {skill.damage}</p>'
+            f'{description_html}'
             f'{upgrade_body}'
         )
-        cls._write_dialog(path, 350, 330, body, close="true", wrap_body=False)
+        cls._write_dialog(path, 380, 390, body, close="true", wrap_body=False)
         return path
+
+    @staticmethod
+    def _wrap_detail_text(text: str, max_chars: int) -> list[str]:
+        lines = []
+        for raw_line in str(text or "").replace("\r", "").split("\n"):
+            current = ""
+            for char in raw_line:
+                current += char
+                if len(current) >= max_chars:
+                    lines.append(current)
+                    current = ""
+            if current:
+                lines.append(current)
+        return lines or ["暂无技能说明"]
 
     @classmethod
     def _register(cls, skill: SkillConfig):
         if not skill.group_id:
             skill.group_id = skill.name
+        if skill.raw is None and skill.sp_cost <= 0:
+            skill.sp_cost = 10
         cls._skills[skill.skill_id] = skill
         cls._skill_name_index[skill.name] = skill
         cls._skill_group_index.setdefault(skill.group_id, []).append(skill)
@@ -500,8 +545,19 @@ class SkillSystem:
     def _sort_group_skills(cls, group_skills: list[SkillConfig]) -> list[SkillConfig]:
         return sorted(
             group_skills or [],
-            key=lambda s: (s.skill_level, s.required_level, s.order, cls._to_int(s.skill_id, 0)),
+            key=lambda s: (s.skill_level, 0 if s.raw else 1, s.required_level, s.order, cls._to_int(s.skill_id, 0)),
         )
+
+    @classmethod
+    def _effective_group_skills(cls, group_skills: list[SkillConfig]) -> list[SkillConfig]:
+        result = []
+        exists_level = set()
+        for skill in cls._sort_group_skills(group_skills):
+            if skill.skill_level in exists_level:
+                continue
+            exists_level.add(skill.skill_level)
+            result.append(skill)
+        return result
 
     @staticmethod
     def _get_actor_resource(actor, names: tuple[str, ...]) -> Optional[int]:

@@ -5,18 +5,26 @@
     <title>Chat</title>
 </head>
 <body>
-<div id="app" width="360" height="190" close="false" padding="0 8 0 8">
-    <p color="#8AD7FF" font-size="12">聊天</p>
-    <div id="chat_messages" height="84">
-        <p color="#FFFFFF" font-size="12">[本地] Eval: 21</p>
-            <p color="#FFFFFF" font-size="12">[本地] Eval: 123123</p>
-            <p color="#FFFFFF" font-size="12">[本地] Eval: 123213</p>
-            <p color="#FFFFFF" font-size="12">[本地] Eval: 4654654</p>
+<div id="app" width="372" height="248" close="false" padding="8 10 6 10" background-color="#050505">
+    <div id="chat_messages" width="348" height="92" padding="4 6 4 6" background-color="#101010">
+        <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">抵制不良游戏，拒绝盗版游戏。</p></row>
+            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">注意自我保护，谨防受骗上当。</p></row>
+            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">适度游戏益脑，沉迷游戏伤身。</p></row>
+            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">合理安排时间，享受健康生活。</p></row>
     </div>
     <row>
-        <input id="chat_input" type="text" width="265" height="24" placeholder="输入聊天或 -help" @submit="chat_submit" @history="chat_history"/>
+        <button id="chat_channel_一般_active" width="68" height="24" color="#FFE08A" @click="chat_channel_一般">&gt;一般频道</button>
+        <button id="chat_channel_队伍_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_队伍">队伍频道</button>
+        <button id="chat_channel_诸侯_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_诸侯">诸侯频道</button>
+        <button id="chat_channel_世界_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_世界">世界频道</button>
+        <button id="chat_channel_系统_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_系统">系统频道</button>
+    </row>
+    <row padding="6 0 0 0">
+        <img id="chat_face_toggle" src="chat_faces_13x13_32/face_1.png" width="30" height="30" img-size="30,30" @click="chat_faces_toggle" />
+        <input id="chat_input" type="text" width="220" height="24" placeholder="一般频道" @submit="chat_submit" @history="chat_history"/>
         <button id="chat_send_btn" width="56" height="24" @click="chat_send">发送</button>
     </row>
+    
 </div>
 </body>
 </html>

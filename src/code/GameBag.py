@@ -211,6 +211,7 @@ class GameBag:
 
         self.__select_item = None
         self.__hover_item = None
+        self.__target_use_item = None
         self.__drag = False
         # 道具的详情Surface
         self.__curr_item_detail = None
@@ -251,11 +252,12 @@ class GameBag:
         """
         call_total = 0
 
-        item_data: dict[str, str | int | list] = SourceManager.get_csv("items", str(item_id))
-        if item_data is None:
+        item_template: dict[str, str | int | list] = SourceManager.get_csv("items", str(item_id))
+        if item_template is None:
             GameToastManager.add_message(f"无法追加道具:[{item_id}], 不存在的道具信息")
             GameLogManager.log_service_error(f"无法追加道具:[{item_id}], 不存在的道具信息")
             return
+        item_data = copy.deepcopy(item_template)
 
         self.update_blit = True
         page = x = y = -1
@@ -286,7 +288,8 @@ class GameBag:
         # 是否指定了默认数量
         if total > 0:
             if item_data.get("可重叠摆放") == "1":
-                item_data["初始使用次数"] = str(min(total, int(item_data.get("最大使用次数", total))))
+                max_count = max(1, self.__safe_int(item_data.get("最大使用次数"), total))
+                item_data["初始使用次数"] = str(min(total, max_count))
             else:
                 if not has_call:
                     call_total = total - 1
@@ -305,7 +308,7 @@ class GameBag:
                 if not self.__same_stack_meta(item, quality, enhance_level, expire_time):
                     continue
 
-                item_count = int(item_data.get("初始使用次数"))
+                item_count = self.__safe_int(item_data.get("初始使用次数"), 1)
                 # 差值是否小于新增的数量
                 if item_count + item.count <= item.max_count:
                     item.count += item_count
@@ -392,6 +395,20 @@ class GameBag:
                     return True
         return False
 
+    def consume_item(self, item: Item, count: int = 1):
+        """消耗背包中的指定道具数量。"""
+        if item is None or count <= 0:
+            return False
+        bag_item = self.get_item_by_uid(item.UID)
+        if bag_item is None:
+            return False
+        if int(bag_item.count or 0) > count:
+            bag_item.count -= count
+        else:
+            self.remove_item(bag_item.UID)
+        self.update_blit = True
+        return True
+
     def sort_items(self):
         """根据排序规则对物品排序（需自行实现逻辑）"""
         # 1. 生成当前背包页数的最大格子数量
@@ -434,6 +451,13 @@ class GameBag:
                     if x.bind and not pivot.bind:
                         left.append(x)
                     elif not x.bind and pivot.bind:
+                        right.append(x)
+                    # 同一个道具内部, 强化等级高的排在前面.
+                    elif GameBag.__safe_int(getattr(x, "enhance_level", 0)) > GameBag.__safe_int(
+                            getattr(pivot, "enhance_level", 0)):
+                        left.append(x)
+                    elif GameBag.__safe_int(getattr(x, "enhance_level", 0)) < GameBag.__safe_int(
+                            getattr(pivot, "enhance_level", 0)):
                         right.append(x)
                     # 确保数量少的排在后面
                     elif x.count > pivot.count:
@@ -591,7 +615,7 @@ class GameBag:
                 number -= item.max_count - item.count
                 if number <= 0:
                     return True
-            max_count = int(item_data.get("最大使用次数", 1) or 1)
+            max_count = max(1, self.__safe_int(item_data.get("最大使用次数"), 1))
             need_slots = max(1, (max(number, 1) + max_count - 1) // max_count)
             return bag_total >= need_slots
         else:
@@ -605,9 +629,29 @@ class GameBag:
         """同一堆叠必须是同品质、同强化、同到期时间."""
         return (
             str(getattr(item, "quality", "white") or "white") == str(quality or "white")
-            and int(getattr(item, "enhance_level", 0) or 0) == int(enhance_level or 0)
-            and int(getattr(item, "expire_time", 0) or 0) == int(expire_time or 0)
+            and GameBag.__safe_int(getattr(item, "enhance_level", 0)) == GameBag.__safe_int(enhance_level)
+            and GameBag.__safe_int(getattr(item, "expire_time", 0)) == GameBag.__safe_int(expire_time)
         )
+
+    @staticmethod
+    def __safe_int(value, default: int = 0) -> int:
+        try:
+            if value is None:
+                return default
+            if isinstance(value, str):
+                value = value.strip()
+                if value == "":
+                    return default
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def __safe_str(value, default: str = "") -> str:
+        if value is None:
+            return default
+        text = str(value).strip()
+        return text if text else default
 
     def has_box(self, x: int, y: int):
         return x <= 3 and y <= 4
@@ -682,6 +726,16 @@ class GameBag:
 
     def mouse_down(self, **args):
         check_bag = self.__check_bag()
+        if self.__target_use_item is not None:
+            if check_bag[0] and check_bag[1]:
+                self.__apply_target_item(check_bag[1])
+                return
+            drag_equip = self.__drag_equip()
+            if drag_equip and drag_equip.get("item"):
+                self.__apply_target_item(drag_equip.get("item"))
+                return
+            GameToastManager.add_message("只能对装备使用")
+            return
         if check_bag[0]:
             if check_bag[1]:
                 self.__select_item = {
@@ -732,12 +786,31 @@ class GameBag:
             self.update_blit = True
             self.__move_path.clear()  # 清空移动路径
             return
+        forge_system = getattr(self.gm, "forge_system", None)
+        forge_visible = forge_system is not None and forge_system.visible()
+        if forge_visible:
+            curr_item = self.get_item_by_uid(self.__select_item.get("uid"))
+            if curr_item is not None and forge_system.drop_item(curr_item):
+                self.update_blit = True
+                self.__select_item = None
+                self.__move_path.clear()
+                return
         check_bag = self.__check_bag()
         if check_bag[0]:
             if self.__select_item["pos"] != check_bag[2] and len(self.__move_path) > 1 and self.__select_item[
                 "texture"]:
                 self.change_item_loc(self.__select_item["pos"], check_bag[2])
         else:
+            if forge_visible:
+                self.update_blit = True
+                self.__select_item = None
+                self.__move_path.clear()
+                return
+            if self.__mouse_over_other_ui():
+                self.update_blit = True
+                self.__select_item = None
+                self.__move_path.clear()
+                return
             drag_equip = self.__drag_equip()
             if drag_equip:
                 curr_item: Item = self.get_item_by_uid(self.__select_item.get("uid"))
@@ -801,11 +874,19 @@ class GameBag:
 
     def mouse_double_click(self):
         check_bag = self.__check_bag()
+        forge_system = getattr(self.gm, "forge_system", None)
+        forge_visible = forge_system is not None and forge_system.visible()
         if check_bag[0] and check_bag[1]:
+            if forge_visible and forge_system.auto_place_item(check_bag[1]):
+                self.update_blit = True
+                return
             self.__use_item(check_bag[1])
             return
         drag_equip = self.__drag_equip()
         if drag_equip:
+            if forge_visible:
+                GameToastManager.add_message("锻造中不能穿戴装备")
+                return
             if drag_equip.get("item"):
                 self.__use_equip(drag_equip.get("item"), True)
                 # self.add_item_exist(drag_equip.get("item"))
@@ -955,10 +1036,27 @@ class GameBag:
 
         return None
 
+    def __mouse_over_other_ui(self):
+        mouse_pos = pygame.mouse.get_pos()
+        game_ui: GameUI = self.gm.get("游戏UI")
+        for ui_surface in game_ui.rect_list:
+            if not ui_surface.get("show") or ui_surface.get("ignore_event"):
+                continue
+            if ui_surface.get("name") in ("角色背包", "item_cursor", "item_selected"):
+                continue
+            rect = ui_surface.get("rect")
+            if rect and rect.collidepoint(mouse_pos[0], mouse_pos[1]):
+                return True
+        return False
+
     def __use_item(self, item: Item):
         """使用道具"""
         # 如果存在回调. 那么可能是在战斗中. 使用一次道具就把背包关闭
         self.__set_item_detail(None, [0, 0])
+        forge_system = getattr(self.gm, "forge_system", None)
+        if forge_system is not None and forge_system.visible() and item.type == 1:
+            GameToastManager.add_message("锻造中不能穿戴装备")
+            return
         if BattleManager.battle_sta():
             if item.type == 2 and BattleManager.use_battle_item(item):
                 return
@@ -975,7 +1073,55 @@ class GameBag:
             case 3:  # 矿石
                 GameToastManager.add_message(f"矿石道具未实现:{item}")
                 return
+            case 4:  # 装备强化/附魔类卷轴, 需要二次选择目标装备
+                if 1 <= int(getattr(item, "sub_type", 0) or 0) <= 99:
+                    self.__target_use_item = item
+                    self.__select_item = {
+                        "item": item,
+                        "pos": item.get_pos(),
+                        "texture": SourceManager.set_surface_alpha(item.avatar, 120),
+                        "uid": item.UID
+                    }
+                    self.update_blit = True
+                    GameToastManager.add_message("请选择需要强化的装备")
+                    return
+                GameToastManager.add_message(f"卷轴道具未实现:{item}")
+                return
         GameToastManager.add_message(f"无效类型的道具:{item}")
+
+    def __apply_target_item(self, target: Item):
+        use_item = self.__target_use_item
+        if use_item is None:
+            return False
+        if target is None or int(getattr(target, "type", 0) or 0) != 1:
+            GameToastManager.add_message("只能对装备使用")
+            self.__clear_target_use_item()
+            return False
+        if self.get_item_by_uid(use_item.UID) is None:
+            GameToastManager.add_message("道具已经不在背包里了")
+            self.__clear_target_use_item()
+            return False
+        target_level = int(getattr(use_item, "sub_type", 0) or 0)
+        if target_level <= int(getattr(target, "enhance_level", 0) or 0):
+            GameToastManager.add_message(f"{target.name} 已经达到 +{target.enhance_level}")
+            self.__clear_target_use_item()
+            return False
+        target.enhance_level = target_level
+        self.consume_item(use_item, 1)
+        u_player: "Player" = self.gm.get("主角")
+        if u_player:
+            u_player.refresh_final_status()
+        GameToastManager.add_message(f"{target.name} 强化至 +{target_level}")
+        self.__clear_target_use_item()
+        self.update_blit = True
+        return True
+
+    def __clear_target_use_item(self):
+        self.__target_use_item = None
+        self.__select_item = None
+        self.__drag = False
+        self.__move_path.clear()
+        self.update_blit = True
 
     def __use_equip(self, equip: Item, un_use: bool = False) -> bool:
         """ 使用装备 """
@@ -1064,7 +1210,8 @@ class GameBag:
             "purple": "#C87BFF",
         }.get(str(getattr(item, "quality", "white") or "white").lower(), "#FFFFFF")
         # 道具名称
-        mask_sur.blit(GameFont.get_text_surface_line(item.name, True, 15, quality_color),
+        display_name = item.get_display_name() if hasattr(item, "get_display_name") else item.name
+        mask_sur.blit(GameFont.get_text_surface_line(display_name, True, 15, quality_color),
                       (65, 5))
         if item.bind:
             mask_sur.blit(GameFont.get_text_surface_line("已绑定", True, 11, "#FF6A6A"),
@@ -1087,9 +1234,6 @@ class GameBag:
                           (65, 55))
 
         render_y = 90
-        if getattr(item, "enhance_level", 0) > 0:
-            mask_sur.blit(GameFont.get_text_surface_line(f"强化等级:+{item.enhance_level}", True, 11, quality_color),
-                          (5, render_y - 18))
         if item.type == 1:
             # 直接调用新方法获取已经排好序、分好色的数组
             display_list = item.get_display_attrs()
@@ -1185,7 +1329,9 @@ class GameBag:
     def refresh_bag(self, raw_data: str):
         """
         根据服务器/数据库传入的字符串数据刷新背包
-        格式: page,y,x,id,count|page,y,x,id,count
+        格式:
+        新格式: uid,page,y,x,id,count|uid,page,y,x,id,count
+        旧格式: page,y,x,id,count|page,y,x,id,count
         """
         if not raw_data:
             return
@@ -1200,21 +1346,29 @@ class GameBag:
 
         # 记录本次数据中所有有效的位置
         new_positions = set()
+        parsed_any_item = False
 
         item_data: dict[str, dict[str, str | int]] = SourceManager.get_csv("items")
         for item_raw in item_raw_list:
             try:
-                # 解析格式: xxxx,1,0,0,1,1 -> uid, page, y, x, id, count
-                parts = item_raw.split(",")
-                # 1. 基础解包：uid 是字符串，其余核心字段转 int
-                uid = parts[0]
-                # 核心字段：位置(p, y, x)、ID(item_id)、数量(count)
-                p, y, x, item_id, count = map(int, parts[1:6])
+                parts = [part.strip() for part in item_raw.split(",")]
+                if len(parts) < 5:
+                    raise ValueError("字段数量不足")
 
-                # 2. 获取剩余的动态字段
-                extras = parts[6:]
+                # 兼容旧存档: page,y,x,id,count。新存档首字段是 uid。
+                if len(parts) == 5:
+                    uid = ""
+                    p, y, x, item_id, count = map(int, parts[0:5])
+                    extras = []
+                else:
+                    uid = parts[0]
+                    p, y, x, item_id, count = map(int, parts[1:6])
+                    extras = parts[6:]
+
                 # 3. 业务逻辑解析
                 item_info = item_data.get(str(item_id))
+                if not item_info:
+                    raise ValueError(f"不存在的道具ID:{item_id}")
                 # 主副属性 / 有效期 / 品质 / 强化等级
                 primary_attr_id = 0
                 secondary_attr_id = 0
@@ -1222,26 +1376,31 @@ class GameBag:
                 quality = "white"
                 enhance_level = 0
                 if item_info and len(extras) > 0:
-                    padded_extras = extras + [0] * 5
-                    match int(item_info.get("类型")):
+                    padded_extras = extras + [""] * 5
+                    match self.__safe_int(item_info.get("类型")):
                         # 装备类: 兼容旧格式 uid,page,y,x,id,count,主属性,副属性,过期时间
                         case 1:
-                            primary_attr_id, secondary_attr_id, expire_time = padded_extras[:3]
-                            quality = padded_extras[3] or "white"
-                            enhance_level = padded_extras[4] or 0
+                            primary_attr_id = self.__safe_int(padded_extras[0])
+                            secondary_attr_id = self.__safe_int(padded_extras[1])
+                            expire_time = self.__safe_int(padded_extras[2])
+                            quality = self.__safe_str(padded_extras[3], "white")
+                            enhance_level = self.__safe_int(padded_extras[4])
                         # 非装备类旧格式没有主副属性, 新格式从 extras[0] 开始追加品质/强化/过期时间
                         case _:
-                            quality = padded_extras[0] or "white"
-                            enhance_level = padded_extras[1] or 0
-                            expire_time = padded_extras[2] or 0
+                            quality = self.__safe_str(padded_extras[0], "white")
+                            enhance_level = self.__safe_int(padded_extras[1])
+                            expire_time = self.__safe_int(padded_extras[2])
 
                 # 内部索引转换：页码从 1 开始转为从 0 开始
                 page_idx = p - 1
                 if not (0 <= page_idx < self.max_page):
                     continue
+                if not (0 <= y < self.row and 0 <= x < self.column):
+                    continue
 
                 pos_key = f"{page_idx}#{y}#{x}"
                 new_positions.add(pos_key)
+                parsed_any_item = True
 
                 current_item = self.items[page_idx][y][x]
 
@@ -1254,23 +1413,24 @@ class GameBag:
                         new_data["__pos"] = [page_idx, y, x]
 
                         if primary_attr_id:
-                            new_data["主属性"] = int(primary_attr_id)
+                            new_data["主属性"] = primary_attr_id
 
                         if secondary_attr_id:
-                            new_data["副属性"] = int(secondary_attr_id)
+                            new_data["副属性"] = secondary_attr_id
 
                         if expire_time:
-                            new_data["过期时间"] = int(expire_time)
+                            new_data["过期时间"] = expire_time
 
                         if quality:
                             new_data["品质"] = str(quality)
 
                         if enhance_level:
-                            new_data["强化等级"] = int(enhance_level)
+                            new_data["强化等级"] = enhance_level
 
                         # 实例化 Item，确保其内部生成的 UID 长度适中
                         new_obj = Item(new_data)
-                        new_obj.UID = uid
+                        if uid:
+                            new_obj.UID = uid
                         self.items[page_idx][y][x] = new_obj
                         self.items_index_dict[pos_key] = True
 
@@ -1278,20 +1438,21 @@ class GameBag:
                 else:
                     current_item.count = count
                     current_item.quality = str(quality or "white")
-                    current_item.enhance_level = int(enhance_level or 0)
-                    current_item.expire_time = int(expire_time or 0)
+                    current_item.enhance_level = self.__safe_int(enhance_level)
+                    current_item.expire_time = self.__safe_int(expire_time)
 
             except (ValueError, IndexError) as e:
                 GameLogManager.log_service_error(f"解析装备数据[{item_raw}]失败=> {e}")
                 continue
 
-        # 2. 清理逻辑：如果背包原有位置不在新数据中，视为已被移除
-        for index_key in list(self.items_index_dict.keys()):
-            if self.items_index_dict[index_key] and index_key not in new_positions:
-                pg, iy, ix = [int(i) for i in index_key.split("#")]
-                # 只有当前页或全量同步时才执行清理，这里采用全量清理逻辑
-                self.items[pg][iy][ix] = None
-                self.items_index_dict[index_key] = False
+        # 2. 清理逻辑：如果背包原有位置不在新数据中，视为已被移除。
+        # 全部解析失败时不清理，避免旧/损坏数据导致当前背包被误清空并覆盖回存档。
+        if parsed_any_item or not item_raw_list:
+            for index_key in list(self.items_index_dict.keys()):
+                if self.items_index_dict[index_key] and index_key not in new_positions:
+                    pg, iy, ix = [int(i) for i in index_key.split("#")]
+                    self.items[pg][iy][ix] = None
+                    self.items_index_dict[index_key] = False
 
         # --- 3. 处理装备栏 ---
         if equip_raw:
@@ -1302,15 +1463,16 @@ class GameBag:
 
                 slot_key = e_data[0]
                 item_id = e_data[1]
-                p_attr = int(e_data[2])
-                s_attr = int(e_data[3])
-                expire = int(e_data[4])
-                quality = e_data[5] if len(e_data) > 5 and e_data[5] else "white"
-                enhance_level = int(e_data[6]) if len(e_data) > 6 and e_data[6] else 0
+                p_attr = self.__safe_int(e_data[2])
+                s_attr = self.__safe_int(e_data[3])
+                expire = self.__safe_int(e_data[4])
+                quality = self.__safe_str(e_data[5] if len(e_data) > 5 else "", "white")
+                enhance_level = self.__safe_int(e_data[6] if len(e_data) > 6 else "")
 
                 # 创建 Item 对象
                 config = SourceManager.get_csv("items", item_id)
                 if config:
+                    config = copy.deepcopy(config)
                     config["__pos"] = [-1,-1,-1]
                     config["品质"] = quality
                     config["强化等级"] = enhance_level

@@ -711,7 +711,8 @@ class ShopSystem:
         if item.bind:
             mask_sur.blit(self.item_lock, (5, 40))
         # 道具名称
-        mask_sur.blit(self.gm.game_font.get_text_surface_line(item.name, True, 15, "#FFD700"),
+        display_name = item.get_display_name() if hasattr(item, "get_display_name") else item.name
+        mask_sur.blit(self.gm.game_font.get_text_surface_line(display_name, True, 15, "#FFD700"),
                       (65, 5))
         if item.bind:
             mask_sur.blit(self.gm.game_font.get_text_surface_line("已绑定", True, 11, "#FF6A6A"),

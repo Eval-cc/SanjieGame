@@ -34,6 +34,7 @@ from src.system.GameToast import GameToastManager
 from src.system.ShopSystem import ShopSystem
 from src.system.WeatherSystem import WeatherSystem
 from src.system.ClickEffectSystem import ClickEffectSystem
+from src.system.ForgeSystem import ForgeSystem
 
 if TYPE_CHECKING:
     from src.manager.GameCamera import GameCamera
@@ -86,6 +87,7 @@ class GameManager:
     """全局游戏静态类管理映射"""
     shop_system: "ShopSystem" = None
     chat_system = None
+    forge_system: "ForgeSystem" = None
 
     weather_sys:"WeatherSystem" = None
     """天气系统"""
@@ -136,6 +138,8 @@ class GameManager:
         cls.weather_sys = WeatherSystem(cls)
         cls.add("天气系统", cls.weather_sys)
         cls.add("点击特效系统", ClickEffectSystem(cls))
+        cls.forge_system = ForgeSystem(cls)
+        cls.add("锻造系统", cls.forge_system)
 
     @classmethod
     def __refresh_layer(cls):
@@ -272,8 +276,12 @@ class GameManager:
         if start_pos is None:
             start_pos = [0, 0]
         game_ui: "GameUI" = cls.get("游戏UI")
-        if game_ui.has_un_allow_move():
-            return []
+        if not has_npc:
+            forge_system = getattr(cls, "forge_system", None)
+            if forge_system and forge_system.blocks_player_move():
+                return []
+            if game_ui.has_un_allow_move():
+                return []
 
         path_list = []
 

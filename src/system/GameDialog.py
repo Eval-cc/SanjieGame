@@ -76,6 +76,22 @@ class GameDialog:
 
         self.dialog_key = win_key
 
+    def __focused_component(self):
+        if self.__focus_node is None:
+            return None
+        return self._alone_component.get(self.__focus_node.get("target"))
+
+    @staticmethod
+    def __local_mouse_event(event, win_sprite):
+        local_event = dict(event or {})
+        mouse_pos = local_event.get("mouse_pos", pygame.mouse.get_pos())
+        win_rect = win_sprite.get("rect")
+        local_event["mouse_pos"] = (
+            mouse_pos[0] - win_rect.x,
+            mouse_pos[1] - win_rect.y
+        )
+        return local_event
+
     def show_dialog(self, dialog_path: str, npc=None, render_x: int = 5, render_y: int = -1, dialog_callback=None,
                     overwrite_path: bool = False, dialog_event_dict: Dict[str, Any] = None, loc: str = "middle",
                     load_val: Dict[str, Any] = None, always_on_top: bool = False, hover_callback: bool = False,
@@ -195,14 +211,16 @@ class GameDialog:
                 """宽度和当前UI管理的不一样了?  那就重新加载一下"""
                 dialog_sur = pygame.Surface((int(width), int(height)), pygame.SRCALPHA)
                 dialog_sur.blit(self.dialog_title, (2, 0))
-                dialog_sur.blit(dialog_bg, (0, 30))
+                if not _has_bg:
+                    dialog_sur.blit(dialog_bg, (0, 30))
                 if self.rect is None:
                     self.rect = dialog_sur.get_rect()
                 self.rect.width = int(width)
                 self.rect.height = int(height)
 
-                pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
-                                 (0, 30, int(width), int(height) - 30), 1)
+                if not _has_bg:
+                    pygame.draw.rect(dialog_sur, (self.gm.game_font.hex_color_to_rgb("#228B22")),
+                                     (0, 30, int(width), int(height) - 30), 1)
 
             visible_height = dialog_sur.get_height()
 
@@ -256,6 +274,12 @@ class GameDialog:
                 if self.dialog_callback:
                     self.dialog_callback(node)
                     return
+                if node.get('tag') not in ("a", "button", "input", "tab-item", "slider", "checkbox"):
+                    _be = node.get("attrs", {}).get("@click")
+                    if _be and self.dialog_event_dict.get(_be):
+                        self.dialog_event_dict[_be]()
+                        self.update_blit = True
+                        return
                 if node.get('tag') == "a":
                     _be = node.get("attrs").get("@click")
                     if _be and self.dialog_event_dict.get(_be):
@@ -292,8 +316,10 @@ class GameDialog:
                     self.__focus_node = node
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_down"):
-                        if _com.mouse_down(event):  # 返回True 表示有问题. 不让执行,可能被禁用了
+                        local_event = self.__local_mouse_event(event, win_sprite)
+                        if _com.mouse_down(local_event):  # 返回True 表示有问题. 不让执行,可能被禁用了
                             return
+                        self.update_blit = True
                         return
                     node["attrs"]["focus"] = True
                     # 设置候选框的位置
@@ -344,6 +370,12 @@ class GameDialog:
         game_ui: GameUI = self.gm.get("游戏UI")
         win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
 
+        focused_com = self.__focused_component()
+        if focused_com and hasattr(focused_com, "mouse_up"):
+            local_event = self.__local_mouse_event(event, win_sprite)
+            focused_com.mouse_up(local_event)
+            self.update_blit = True
+
         for [node, gui_rect] in self.__GUI_rect_list:
             if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
                 if node.get('tag') == "button":
@@ -367,11 +399,22 @@ class GameDialog:
         mouse_pos = pygame.mouse.get_pos()
         game_ui: GameUI = self.gm.get("游戏UI")
         win_sprite = game_ui.get_surface_sprite(self.dialog_key)  # 需要加上UI的偏移
+        focused_com = self.__focused_component()
+        if focused_com and hasattr(focused_com, "mouse_move") and \
+                hasattr(focused_com, "is_drag_selecting") and focused_com.is_drag_selecting():
+            local_event = self.__local_mouse_event(event, win_sprite)
+            focused_com.mouse_move(local_event)
+            self.update_blit = True
+            return
+
         hover_node = None
         for [node, gui_rect] in self.__GUI_rect_list:
             if gui_rect.collidepoint(mouse_pos[0] - win_sprite.get("rect").x, mouse_pos[1] - win_sprite.get("rect").y):
                 hover_node = node
-                self.__emit_hover_node(node, mouse_pos)
+                node_rect = pygame.Rect(gui_rect)
+                node_rect.x += win_sprite.get("rect").x
+                node_rect.y += win_sprite.get("rect").y
+                self.__emit_hover_node(node, mouse_pos, node_rect)
                 if node.get('tag') == "slider":
                     _com = self._alone_component.get(node.get("target"))
                     if _com and hasattr(_com, "mouse_move"):
@@ -392,18 +435,21 @@ class GameDialog:
         if hover_node is None:
             self.__emit_hover_node(None, mouse_pos)
 
-    def __emit_hover_node(self, node, mouse_pos):
+    def __emit_hover_node(self, node, mouse_pos, node_rect=None):
         if not self.dialog_hover_callback or not self.dialog_callback:
             return
+        payload_rect = None
+        if node_rect is not None:
+            payload_rect = [node_rect.x, node_rect.y, node_rect.width, node_rect.height]
         hover_key = id(node) if node is not None else None
         if hover_key == self.__hover_node_key and node is not None:
-            self.dialog_callback({"__type": "hover_move", "node": node, "mouse_pos": mouse_pos})
+            self.dialog_callback({"__type": "hover_move", "node": node, "mouse_pos": mouse_pos, "node_rect": payload_rect})
             return
         self.__hover_node_key = hover_key
         if node is None:
             self.dialog_callback({"__type": "hover_out", "mouse_pos": mouse_pos})
             return
-        self.dialog_callback({"__type": "hover", "node": node, "mouse_pos": mouse_pos})
+        self.dialog_callback({"__type": "hover", "node": node, "mouse_pos": mouse_pos, "node_rect": payload_rect})
 
     #
     # def mouse_out(self):
@@ -848,6 +894,9 @@ class GameDialog:
 
                 # 跳过不可视区域
                 self.blit_with_clipping(dialog_sur, img_surface, render_x, render_y, view_height)
+                node_rect = pygame.Rect(render_x, render_y, img_surface.width, img_surface.height)
+                if attrs.get("@click"):
+                    self.__GUI_rect_list.append([node, node_rect])
                 render_y += img_surface.height
             else:
                 img_url = curr_style["src"]
@@ -881,6 +930,9 @@ class GameDialog:
 
                 # 跳过不可视区域
                 self.blit_with_clipping(dialog_sur, img_surface, render_x, render_y, view_height)
+                node_rect = pygame.Rect(render_x, render_y, img_surface.width, img_surface.height)
+                if attrs.get("@click"):
+                    self.__GUI_rect_list.append([node, node_rect])
                 render_y += img_surface.height
 
         elif tag == "input11":
@@ -1058,6 +1110,8 @@ class GameDialog:
                     li_attrs = child.get("attrs", {})
                     li_width = int(li_attrs.get("width", 50))
                     li_height = int(li_attrs.get("height", 50))
+                    li_outer_width = li_width
+                    li_outer_height = li_height
                     li_margin = int(li_attrs.get("margin", 0))
                     li_padding = li_attrs.get("padding", "0").split()
 
@@ -1076,13 +1130,36 @@ class GameDialog:
                         max_row_height = 0
 
                     # 创建li元素
-                    li_surface = pygame.Surface((li_width, li_height), pygame.SRCALPHA)
-                    if "background-color" in li_attrs:
+                    li_surface = pygame.Surface((li_outer_width, li_outer_height), pygame.SRCALPHA)
+                    bg_image = li_attrs.get("background-image")
+                    if bg_image:
+                        bg_surface = self.__ui_cache_dict.get(f"ui_bg_{bg_image}_{li_outer_width}_{li_outer_height}")
+                        if bg_surface is None:
+                            if bg_image.startswith("#ROOT_S"):
+                                bg_surface = SourceManager.load(
+                                    bg_image.replace("#ROOT_S", SourceManager.ui_system_path)
+                                )
+                            elif bg_image.startswith("#ROOT_SKILL"):
+                                bg_surface = SourceManager.load(
+                                    bg_image.replace("#ROOT_SKILL", SourceManager.ui_skill_path)
+                                )
+                            elif bg_image.startswith("#ROOT_ITEM"):
+                                bg_surface = SourceManager.load(
+                                    bg_image.replace("#ROOT_ITEM", SourceManager.ui_item_path)
+                                )
+                            else:
+                                bg_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{bg_image}")
+                            bg_surface = SourceManager.surface_scale(bg_surface, [li_outer_width, li_outer_height])
+                            self.__ui_cache_dict[f"ui_bg_{bg_image}_{li_outer_width}_{li_outer_height}"] = bg_surface
+                        if bg_surface:
+                            li_surface.blit(bg_surface, (0, 0))
+                    elif "background-color" in li_attrs:
                         li_surface.fill(self.gm.game_font.hex_color_to_rgb(li_attrs["background-color"]))
 
                     # 初始化渲染位置 -- padding的顺序和 html的规范保持一致. 上右下左
-                    element_x = 5 + __li_padding[3]
-                    element_y = 5 + __li_padding[0]
+                    base_offset = 0 if li_attrs.get("tight") == "true" else 5
+                    element_x = base_offset + __li_padding[3]
+                    element_y = base_offset + __li_padding[0]
                     li_width -= __li_padding[1]
                     li_height -= __li_padding[2]
                     max_line_height = 0
@@ -1141,10 +1218,13 @@ class GameDialog:
                                 # 处理图片
                                 img_attrs = sub_child.get("attrs", {})
                                 img_src = img_attrs.get("src", "")
+                                img_width = int(img_attrs.get("width", 0) or 0)
+                                img_height = int(img_attrs.get("height", 0) or 0)
 
                                 if img_src:
                                     # 加载图片
-                                    img_surface = self.__ui_cache_dict.get(f"ui_img_{img_src}")
+                                    img_cache_key = f"ui_img_{img_src}_{img_width}_{img_height}"
+                                    img_surface = self.__ui_cache_dict.get(img_cache_key)
                                     if img_surface is None:
                                         if img_src.startswith("#ROOT_SKILL"):
                                             img_surface = SourceManager.load(
@@ -1156,7 +1236,9 @@ class GameDialog:
                                             )
                                         else:
                                             img_surface = SourceManager.load(f"{SourceManager.cfg_task_path}/{img_src}")
-                                        self.__ui_cache_dict[f"ui_img_{img_src}"] = img_surface
+                                        if img_surface and img_width > 0 and img_height > 0:
+                                            img_surface = SourceManager.surface_scale(img_surface, [img_width, img_height])
+                                        self.__ui_cache_dict[img_cache_key] = img_surface
 
                                     if img_surface:
                                         img_rect = img_surface.get_rect()
@@ -1189,7 +1271,7 @@ class GameDialog:
 
                             # 检查是否需要换行
                             if element_x > li_width - 5:
-                                element_x = 5 + __li_padding[3]
+                                element_x = base_offset + __li_padding[3]
                                 element_y += max_line_height + 5 + __li_padding[0]
                                 max_line_height = 0
 
@@ -1197,12 +1279,12 @@ class GameDialog:
                     self.blit_with_clipping(dialog_sur, li_surface, current_x, current_y, view_height)
 
                     # 记录li的位置用于点击检测
-                    li_rect = pygame.Rect(current_x, current_y, li_width, li_height)
+                    li_rect = pygame.Rect(current_x, current_y, li_outer_width, li_outer_height)
                     self.__GUI_rect_list.append([child, li_rect])
 
                     # 更新位置
-                    current_x += li_width + li_margin
-                    max_row_height = max(max_row_height, li_height)
+                    current_x += li_outer_width + li_margin
+                    max_row_height = max(max_row_height, li_outer_height)
 
             # 更新render_y为ul的底部位置
             render_y = current_y + max_row_height + margin
@@ -1480,7 +1562,7 @@ class GameDialog:
                 y = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
 
                 try:
-                    GameMapManager.change_map(map_id, x, y)
+                    GameMapManager.move_player_to(map_id, x, y)
                 except Exception as e:
                     GameToastManager.add_message("切换地图出错")
                     GameLogManager.log_service_error(f"移动地图出错: {e}")
@@ -1563,12 +1645,36 @@ class GameDialog:
 
         return _find(self.__cached_result)
 
+    def get_component_state(self, dom_id: str):
+        component = self._alone_component.get(dom_id)
+        if component is None:
+            return None
+        if hasattr(component, "get_state"):
+            return component.get_state()
+        return {"value": getattr(component, "value", None), "has_focus": getattr(component, "has_focus", False)}
+
     def visible(self):
         """
         当前开窗是否可见
         :return:
         """
         return self.__cached_result is not None
+
+    def node_at_mouse(self, mouse_pos=None):
+        """返回当前鼠标命中的对话节点, 给外部拖拽投放使用."""
+        game_ui: GameUI = self.gm.get("游戏UI")
+        win_sprite = game_ui.get_surface_sprite(self.dialog_key)
+        if win_sprite is None or not win_sprite.get("show"):
+            return None
+
+        if mouse_pos is None:
+            mouse_pos = pygame.mouse.get_pos()
+        rect = win_sprite.get("rect")
+        local_pos = (mouse_pos[0] - rect.x, mouse_pos[1] - rect.y)
+        for node, gui_rect in reversed(self.__GUI_rect_list):
+            if gui_rect.collidepoint(*local_pos):
+                return node
+        return None
 
     def has_focus(self):
         """当前对话框内部是否有控件正在接收键盘输入."""
@@ -1586,7 +1692,24 @@ class GameDialog:
         self._load_val({dom_id: value})
         self.update_blit = True
 
-    def focus(self, dom_id: str):
+    def insert_text(self, dom_id: str, text: str):
+        component = self._alone_component.get(dom_id)
+        if component is None:
+            return False
+        if hasattr(component, "has_focus") and not component.has_focus and hasattr(component, "move_cursor_to_end"):
+            component.move_cursor_to_end()
+        if hasattr(component, "insert_text"):
+            component.insert_text(text)
+        else:
+            value = getattr(component, "value", "") or ""
+            if hasattr(component, "set_text"):
+                component.set_text(f"{value}{text}")
+            else:
+                return False
+        self.update_blit = True
+        return True
+
+    def focus(self, dom_id: str, move_cursor_to_end: bool = False):
         component = self._alone_component.get(dom_id)
         if component is None:
             return False
@@ -1598,7 +1721,9 @@ class GameDialog:
 
         if hasattr(component, "has_focus"):
             component.has_focus = True
-        if hasattr(component, "cursor_index") and hasattr(component, "text"):
+        if move_cursor_to_end and hasattr(component, "move_cursor_to_end"):
+            component.move_cursor_to_end()
+        elif move_cursor_to_end and hasattr(component, "cursor_index") and hasattr(component, "text"):
             component.cursor_index = len(component.text)
         if hasattr(component, "need_redraw"):
             component.need_redraw = True
@@ -1637,7 +1762,10 @@ class GameDialog:
                 component = self._alone_component[dom_id]
                 # 动态调用组件的 value 设置（GameComponentBase 子类通常有 value 属性）
                 try:
-                    component.update_value(value)
+                    if isinstance(value, dict) and hasattr(component, "restore_state"):
+                        component.restore_state(value)
+                    else:
+                        component.update_value(value)
                 except Exception as e:
                     GameLogManager.log_service_error(f"加载组件值失败 [ID:{dom_id}]: {e}")
                 continue

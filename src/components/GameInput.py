@@ -78,6 +78,12 @@ class GameInput(SpriteBase, GameComponentBase):
         self.blink_tick = 0
         self.blink_show = True
         self.scroll_offset = 0
+        self.selection_start = 0
+        self.selection_end = 0
+        self.__selection_anchor = 0
+        self.__drag_selecting = False
+        self.__undo_stack: list[tuple[str, int, int, int]] = []
+        self.__undo_limit = 80
 
         # 渲染缓存
         self.cached_surface = None
@@ -96,6 +102,196 @@ class GameInput(SpriteBase, GameComponentBase):
         GameEvent.add_input(self)
         # 初始化缓存表面
         self._create_base_surface()
+
+    def __display_value(self, value: str | None = None) -> str:
+        value = self.text if value is None else value
+        if self.is_password and value:
+            return "*" * len(value)
+        return value
+
+    @staticmethod
+    def __text_width(text: str) -> int:
+        return GameFont.get_text_size(text)[0]
+
+    def __normalize_cursor_view(self):
+        self.cursor_index = max(0, min(self.cursor_index, len(self.text)))
+        self.selection_start = max(0, min(self.selection_start, len(self.text)))
+        self.selection_end = max(0, min(self.selection_end, len(self.text)))
+        if not self.text:
+            self.scroll_offset = 0
+            self.selection_start = 0
+            self.selection_end = 0
+            return
+
+        visible_width = max(1, self.rect.width - 10)
+        display_text = self.__display_value()
+        text_width = self.__text_width(display_text)
+        if text_width <= visible_width:
+            self.scroll_offset = 0
+            return
+
+        cursor_text = self.__display_value(self.text[:self.cursor_index])
+        cursor_width = self.__text_width(cursor_text)
+        cursor_screen_pos = cursor_width - self.scroll_offset
+        if cursor_screen_pos > self.rect.width - 15:
+            self.scroll_offset = cursor_width - (self.rect.width - 15)
+        elif cursor_screen_pos < 5:
+            self.scroll_offset = max(0, cursor_width - 5)
+
+        max_scroll = max(0, text_width - visible_width)
+        self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
+
+    def __has_selection(self) -> bool:
+        return self.selection_start != self.selection_end
+
+    def __selection_range(self) -> tuple[int, int]:
+        return min(self.selection_start, self.selection_end), max(self.selection_start, self.selection_end)
+
+    def __clear_selection(self):
+        self.selection_start = self.cursor_index
+        self.selection_end = self.cursor_index
+        self.__selection_anchor = self.cursor_index
+
+    def __set_selection(self, start: int, end: int):
+        text_len = len(self.text)
+        self.selection_start = max(0, min(start, text_len))
+        self.selection_end = max(0, min(end, text_len))
+        self.cursor_index = self.selection_end
+        self.__selection_anchor = self.selection_start
+        self.__normalize_cursor_view()
+        self._reset_blink()
+
+    def __select_all(self):
+        self.selection_start = 0
+        self.selection_end = len(self.text)
+        self.cursor_index = len(self.text)
+        self.__selection_anchor = 0
+        self.__normalize_cursor_view()
+        self._reset_blink()
+
+    def __push_undo(self):
+        state = (self.text, self.cursor_index, self.selection_start, self.selection_end)
+        if self.__undo_stack and self.__undo_stack[-1] == state:
+            return
+        self.__undo_stack.append(state)
+        if len(self.__undo_stack) > self.__undo_limit:
+            self.__undo_stack.pop(0)
+
+    def __undo(self):
+        if not self.__undo_stack:
+            return
+        self.text, self.cursor_index, self.selection_start, self.selection_end = self.__undo_stack.pop()
+        self.__normalize_cursor_view()
+        self._trigger_change()
+
+    @staticmethod
+    def __normalize_paste_text(text: str) -> str:
+        return str(text or "").replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+    __clipboard_fallback = ""
+
+    @classmethod
+    def __set_clipboard(cls, text: str):
+        cls.__clipboard_fallback = text
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            pygame.scrap.put(pygame.SCRAP_TEXT, text.encode("utf-8"))
+        except Exception:
+            pass
+
+    @classmethod
+    def __get_clipboard(cls) -> str:
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            data = pygame.scrap.get(pygame.SCRAP_TEXT)
+            if data:
+                for encoding in ("utf-8", "gbk", "latin-1"):
+                    try:
+                        return data.decode(encoding).rstrip("\x00")
+                    except UnicodeDecodeError:
+                        continue
+        except Exception:
+            pass
+        return cls.__clipboard_fallback
+
+    def __copy_selection(self) -> str:
+        if not self.__has_selection():
+            return ""
+        start, end = self.__selection_range()
+        text = self.text[start:end]
+        self.__set_clipboard(text)
+        return text
+
+    def __replace_range(self, start: int, end: int, insert_text: str = "", push_undo: bool = True):
+        start = max(0, min(start, len(self.text)))
+        end = max(start, min(end, len(self.text)))
+        insert_text = self.__normalize_paste_text(insert_text)
+        if self.text[start:end] == insert_text and start == 0 and end == len(self.text):
+            return
+        if push_undo:
+            self.__push_undo()
+        self.text = self.text[:start] + insert_text + self.text[end:]
+        self.cursor_index = start + len(insert_text)
+        self.__clear_selection()
+        self._trigger_change()
+
+    def __insert_text(self, insert_text: str):
+        if insert_text is None or insert_text == "":
+            return
+        if self.__has_selection():
+            start, end = self.__selection_range()
+        else:
+            start = end = self.cursor_index
+        self.__replace_range(start, end, insert_text)
+
+    def __delete_selection(self):
+        if not self.__has_selection():
+            return False
+        start, end = self.__selection_range()
+        self.__replace_range(start, end, "")
+        return True
+
+    def __position_from_mouse(self, mouse_pos: Tuple[int, int]) -> int:
+        if not self.text:
+            return 0
+
+        relative_x = mouse_pos[0] - self.rect.x + self.scroll_offset - 5
+        display_text = self.__display_value()
+        best_pos = 0
+        min_dist = float('inf')
+        for i in range(len(display_text) + 1):
+            width = self.__text_width(display_text[:i])
+            dist = abs(width - relative_x)
+            if dist < min_dist:
+                min_dist = dist
+                best_pos = i
+        return min(best_pos, len(self.text))
+
+    @staticmethod
+    def __has_ctrl(key_event) -> bool:
+        mods = getattr(key_event, "mod", 0) or pygame.key.get_mods()
+        return bool(mods & (pygame.KMOD_CTRL | getattr(pygame, "KMOD_META", 0)))
+
+    @staticmethod
+    def __has_shift(key_event) -> bool:
+        mods = getattr(key_event, "mod", 0) or pygame.key.get_mods()
+        return bool(mods & pygame.KMOD_SHIFT)
+
+    def __move_cursor(self, index: int, selecting: bool = False):
+        index = max(0, min(index, len(self.text)))
+        if selecting:
+            if not self.__has_selection():
+                self.__selection_anchor = self.cursor_index
+            self.cursor_index = index
+            self.selection_start = self.__selection_anchor
+            self.selection_end = self.cursor_index
+        else:
+            self.cursor_index = index
+            self.__clear_selection()
+        self.__normalize_cursor_view()
+        self._reset_blink()
 
     @property
     def value(self) -> str:
@@ -155,41 +351,49 @@ class GameInput(SpriteBase, GameComponentBase):
 
         # 创建基础底图
         self._create_base_surface()
+        self.__normalize_cursor_view()
 
         # --- 处理文本内容 ---
-        display_text = self.text if self.text else self.placeholder
-        if self.is_password and self.text:
-            display_text = "*" * len(self.text)
+        display_text = self.__display_value() if self.text else self.placeholder
 
         text_color = self.text_color if self.text else "#888888"
         text_surface = GameFont.get_text_surface_line(display_text, True, font_color=text_color)
-        text_width = GameFont.get_text_size(self.text)[0]
+        text_width = self.__text_width(display_text) if self.text else 0
 
         # 文本滚动逻辑 (保持原样，但注意绘制坐标需加上偏移)
         input_field_offset = self.__field_size[0]
 
         if text_width > self.rect.width - 10:
-            prefix_width = text_width
-            cursor_screen_pos = prefix_width - self.scroll_offset
-            if cursor_screen_pos > self.rect.width - 15:
-                self.scroll_offset = prefix_width - (self.rect.width - 15)
-            elif cursor_screen_pos < 5:
-                self.scroll_offset = max(0, prefix_width - 5)
-
-            visible_width = min(text_width, self.rect.width - 10)
+            visible_width = min(text_width, max(1, self.rect.width - 10))
             cropped_surface = pygame.Surface((visible_width, self.rect.height), pygame.SRCALPHA)
             cropped_surface.blit(text_surface, (-self.scroll_offset, 0))
             text_surface = cropped_surface
 
-        # 绘制文本到 cached_surface (x坐标需加上偏移)
+        # 绘制选区背景，再绘制文本
         text_y = (self.rect.height - text_surface.get_height()) // 2
+        if self.has_focus and self.__has_selection() and self.text:
+            start, end = self.__selection_range()
+            display_value = self.__display_value()
+            start_width = self.__text_width(display_value[:start])
+            end_width = self.__text_width(display_value[:end])
+            select_x = max(5, 5 + start_width - self.scroll_offset)
+            select_end_x = min(self.rect.width - 5, 5 + end_width - self.scroll_offset)
+            if select_end_x > select_x:
+                select_rect = pygame.Rect(
+                    input_field_offset + select_x,
+                    max(2, text_y - 2),
+                    select_end_x - select_x,
+                    min(self.rect.height - 4, text_surface.get_height() + 4)
+                )
+                pygame.draw.rect(self.cached_surface, pygame.Color("#2F80ED"), select_rect)
+
+        # 绘制文本到 cached_surface (x坐标需加上偏移)
         self.cached_surface.blit(text_surface, (input_field_offset + 5, text_y))
 
         # --- 绘制光标 ---
-        if self.has_focus and self.blink_show:
-            prefix = self.text[:self.cursor_index]
-            _w = GameFont.get_text_size(prefix)[0]
-            prefix_width = _w - self.scroll_offset
+        if self.has_focus and self.blink_show and not self.__has_selection():
+            prefix = self.__display_value(self.text[:self.cursor_index])
+            prefix_width = self.__text_width(prefix) - self.scroll_offset
             cursor_x = max(5, min(5 + prefix_width, self.rect.width - 5))
             pygame.draw.line(
                 self.cached_surface,
@@ -296,61 +500,43 @@ class GameInput(SpriteBase, GameComponentBase):
             if _com == self:
                 continue
             _com.blur()
-        mouse_pos = event.get("mouse_pos")
+
+        mouse_pos = event.get("mouse_pos", (self.rect.x, self.rect.y))
         self.has_focus = True
         self._update_cursor_position(mouse_pos)
+        self.__selection_anchor = self.cursor_index
+        self.__drag_selecting = True
         self.need_redraw = True
         # 如果启动了密码模式, 就不允许输入文本
         if not self.is_password:
             pygame.key.start_text_input()  # 启用文本输入
         pygame.key.set_text_input_rect(self.rect)  # 设置输入区域
-        # mouse_pos = event.get("mouse_pos", (0, 0))
-        # if self.rect.collidepoint(mouse_pos):
-        #     for _com in GameEvent.all_input_pool():
-        #         if _com == self:
-        #             continue
-        #         _com.blur()
-        #
-        #     self.has_focus = True
-        #     self._update_cursor_position(mouse_pos)
-        #     self.need_redraw = True
-        #     # 如果启动了密码模式, 就不允许输入文本
-        #     if not self.is_password:
-        #         pygame.key.start_text_input()  # 启用文本输入
-        #     pygame.key.set_text_input_rect(self.rect)  # 设置输入区域
-        # else:
-        #     if self.has_focus:
-        #         self.has_focus = False
-        #         self.need_redraw = True
-        #         if self.on_submit and self.text:
-        #             self.on_submit(self.text)
+
+    def mouse_move(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
+        """处理鼠标拖动选择"""
+        if not self.__drag_selecting:
+            return
+        mouse_pos = event.get("mouse_pos", (self.rect.x, self.rect.y))
+        self.cursor_index = self.__position_from_mouse(mouse_pos)
+        self.selection_start = self.__selection_anchor
+        self.selection_end = self.cursor_index
+        self.__normalize_cursor_view()
+        self._reset_blink()
+
+    def mouse_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType = None):
+        """处理鼠标释放"""
+        self.__drag_selecting = False
+        self.need_redraw = True
+
+    def is_drag_selecting(self) -> bool:
+        return self.__drag_selecting
 
     def _update_cursor_position(self, mouse_pos: Tuple[int, int]):
         """根据鼠标点击位置更新光标位置"""
-        if not self.text:
-            self.cursor_index = 0
-            return
-
-        relative_x = mouse_pos[0] - self.rect.x + self.scroll_offset - 5
-
-        # 统一使用显示文本来计算位置
-        display_text = "*" * len(self.text) if self.is_password else self.text
-
-        best_pos = 0
-        min_dist = float('inf')  # 得到一个无穷大的数
-
-        for i in range(len(display_text) + 1):
-            prefix = display_text[:i]
-            width = GameFont.get_text_size(prefix)[0]
-            dist = abs(width - relative_x)
-            if dist < min_dist:
-                min_dist = dist
-                best_pos = i
-
-        # 确保光标位置不超过实际文本长度
-        self.cursor_index = min(best_pos, len(self.text))
-        self.blink_tick = 0
-        self.blink_show = True
+        self.cursor_index = self.__position_from_mouse(mouse_pos)
+        self.__clear_selection()
+        self.__normalize_cursor_view()
+        self._reset_blink()
 
     def listen_keyboard(self):
         return self.has_focus
@@ -363,30 +549,45 @@ class GameInput(SpriteBase, GameComponentBase):
         key_event = event.get("event")
         key = key_event.key
         unicode = key_event.unicode
+        has_ctrl = self.__has_ctrl(key_event)
+        has_shift = self.__has_shift(key_event)
+
+        if has_ctrl:
+            if key == pygame.K_a:
+                self.__select_all()
+            elif key == pygame.K_c:
+                self.__copy_selection()
+            elif key == pygame.K_x:
+                if self.__copy_selection():
+                    self.__delete_selection()
+            elif key == pygame.K_v:
+                self.__insert_text(self.__get_clipboard())
+            elif key == pygame.K_z:
+                self.__undo()
+            self.need_redraw = True
+            return
 
         # 处理特殊按键
         if key == pygame.K_BACKSPACE:
-            if self.cursor_index > 0:
-                self.text = self.text[:self.cursor_index - 1] + self.text[self.cursor_index:]
-                self.cursor_index -= 1
-                self._trigger_change()
+            if not self.__delete_selection() and self.cursor_index > 0:
+                self.__replace_range(self.cursor_index - 1, self.cursor_index, "")
         elif key == pygame.K_DELETE:
-            if self.cursor_index < len(self.text):
-                self.text = self.text[:self.cursor_index] + self.text[self.cursor_index + 1:]
-                self._trigger_change()
+            if not self.__delete_selection() and self.cursor_index < len(self.text):
+                self.__replace_range(self.cursor_index, self.cursor_index + 1, "")
         elif key == pygame.K_LEFT:
-            self.cursor_index = max(0, self.cursor_index - 1)
-            self._reset_blink()
+            if self.__has_selection() and not has_shift:
+                self.__move_cursor(self.__selection_range()[0])
+            else:
+                self.__move_cursor(self.cursor_index - 1, has_shift)
         elif key == pygame.K_RIGHT:
-            self.cursor_index = min(len(self.text), self.cursor_index + 1)
-            self._reset_blink()
+            if self.__has_selection() and not has_shift:
+                self.__move_cursor(self.__selection_range()[1])
+            else:
+                self.__move_cursor(self.cursor_index + 1, has_shift)
         elif key == pygame.K_HOME:
-            self.cursor_index = 0
-            self.scroll_offset = 0
-            self._reset_blink()
+            self.__move_cursor(0, has_shift)
         elif key == pygame.K_END:
-            self.cursor_index = len(self.text)
-            self._reset_blink()
+            self.__move_cursor(len(self.text), has_shift)
         elif key == pygame.K_UP or key == pygame.K_DOWN:
             if self.on_history:
                 direction = "up" if key == pygame.K_UP else "down"
@@ -404,23 +605,21 @@ class GameInput(SpriteBase, GameComponentBase):
             if self.is_password:
                 text_color = self.text_color if self.text else "#888888"
                 GameFont.add(unicode, font_size=self.font_size, font_color=text_color, mask_color=text_color)
-                # 直接接收所有unicode字符
-                self.text = self.text[:self.cursor_index] + unicode + self.text[self.cursor_index:]
-                self.cursor_index += len(unicode)
-                self._trigger_change()
+                self.__insert_text(unicode)
 
         self.need_redraw = True
 
     def keyboard_pressed(self, event: Dict[str, ScancodeWrapper] | pygame.event.EventType):
         """处理键盘长按事件"""
+        key_event = event.get("event")
+        if key_event and self.__has_ctrl(key_event):
+            return
         self.key_down(event)
 
     def key_text(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         key_event = event.get("event")
         if not self.is_password:
-            self.text = self.text[:self.cursor_index] + key_event.text + self.text[self.cursor_index:]
-            self.cursor_index += len(key_event.text)
-            self._trigger_change()
+            self.__insert_text(key_event.text)
             self.need_redraw = True
 
     def _reset_blink(self):
@@ -431,6 +630,7 @@ class GameInput(SpriteBase, GameComponentBase):
 
     def _trigger_change(self):
         """触发文本变化回调"""
+        self.__normalize_cursor_view()
         self._reset_blink()
         self.need_redraw = True
         if self.on_change:
@@ -450,20 +650,61 @@ class GameInput(SpriteBase, GameComponentBase):
         self.text = ""
         self.cursor_index = 0
         self.scroll_offset = 0
+        self.__clear_selection()
+        self.__drag_selecting = False
         self._trigger_change()
 
     def set_text(self, text: str):
         """设置输入框文本"""
-        self.text = text
-        self.cursor_index = len(text)
+        self.text = "" if text is None else str(text)
+        self.cursor_index = len(self.text)
         self.scroll_offset = 0
+        self.__clear_selection()
+        self.__drag_selecting = False
         self._trigger_change()
+
+    def insert_text(self, text: str):
+        """在当前光标或选区位置插入文本."""
+        self.__insert_text(text)
+
+    def move_cursor_to_end(self):
+        """把光标移动到文本末尾."""
+        self.cursor_index = len(self.text)
+        self.__clear_selection()
+        self.__normalize_cursor_view()
+        self._reset_blink()
+
+    def get_state(self) -> dict[str, Any]:
+        """保存文本、光标和选区状态, 供对话框重渲染后恢复."""
+        return {
+            "text": self.text,
+            "cursor_index": self.cursor_index,
+            "selection_start": self.selection_start,
+            "selection_end": self.selection_end,
+            "scroll_offset": self.scroll_offset,
+            "has_focus": self.has_focus,
+        }
+
+    def restore_state(self, state: dict[str, Any]):
+        """恢复输入框状态."""
+        if not isinstance(state, dict):
+            return
+        self.text = "" if state.get("text") is None else str(state.get("text"))
+        self.cursor_index = int(state.get("cursor_index", len(self.text)) or 0)
+        self.selection_start = int(state.get("selection_start", self.cursor_index) or 0)
+        self.selection_end = int(state.get("selection_end", self.cursor_index) or 0)
+        self.scroll_offset = max(0, int(state.get("scroll_offset", 0) or 0))
+        self.has_focus = bool(state.get("has_focus", self.has_focus))
+        self.__drag_selecting = False
+        self.__normalize_cursor_view()
+        self._reset_blink()
 
     def blur(self):
         """ 失去焦点 """
         self.blink_tick = 0
         self.has_focus = False
         self.blink_show = False
+        self.__drag_selecting = False
         self.need_redraw = True
         pygame.key.stop_text_input()
 

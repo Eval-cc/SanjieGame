@@ -10,6 +10,7 @@
 @Describe: 
 """
 from uuid import uuid4
+import pygame
 
 from src.code.SpriteBase import SpriteBase
 from src.manager.GameLogManger import GameLogManager
@@ -68,6 +69,8 @@ class Item(SpriteBase):
         '过期时间': {'attr': 'expire_time', 'default': 0, 'type': int},
         '品质': {'attr': 'quality', 'default': 'white', 'type': str},
         '强化等级': {'attr': 'enhance_level', 'default': 0, 'type': int},
+        '关联': {'attr': 'related', 'default': 0, 'type': int},
+        '关联1': {'attr': 'related1', 'default': 0, 'type': int},
     }
 
     def __init__(self, item_data: dict):
@@ -110,6 +113,7 @@ class Item(SpriteBase):
         self.class_requirement = None  # 职业需求
         self.stage_requirement = None  # 阶段需求
         self.icon = None  # Icon（图标）
+        self.icon_name = None  # Icon 配置名, 供 HTML UI 重新加载图标
         self.avatar = None
         self.sound = None  # Sound（音效）
         self.count = None  # 初始使用次数
@@ -124,6 +128,8 @@ class Item(SpriteBase):
         self.secondary_attr_id = -1  # 副属性 ID (强化等级、词条等)
         self.expire_time = -1  # 过期时间 (时间戳)
         self.quality = "white"  # 品质预留 white/green/blue/gold/purple
+        self.related = 0  # 通用关联字段: 强化石装备类型/保护符成功率等
+        self.related1 = 0  # 通用关联字段1: 保护符防爆概率等
 
         # 当前道具位于背包的位置, 第一个参数是在第几页, 后面两个是背包的 x, y 坐标系
         self.__pos = [0, 0, 0]
@@ -144,16 +150,30 @@ class Item(SpriteBase):
         for config_key, mapping in Item.FIELD_MAPPING.items():
             raw_value = item_data.get(config_key)  # 从配置中取值
             if config_key == "Icon":
-                self.avatar = SourceManager.surface_scale(
-                    SourceManager.load(fr"{SourceManager.ui_item_path}\help\{raw_value}.png"), [55, 55])
-                self.icon = SourceManager.surface_scale(
-                    SourceManager.load(fr"{SourceManager.ui_item_path}\{raw_value}.png"), [40, 40])
+                self.icon_name = None if self.__is_blank(raw_value) else str(raw_value)
+                try:
+                    if self.icon_name is None:
+                        raise ValueError("empty item icon")
+                    self.avatar = SourceManager.surface_scale(
+                        SourceManager.load(fr"{SourceManager.ui_item_path}\help\{self.icon_name}.png"), [55, 55])
+                    self.icon = SourceManager.surface_scale(
+                        SourceManager.load(fr"{SourceManager.ui_item_path}\{self.icon_name}.png"), [40, 40])
+                except Exception as icon_error:
+                    GameLogManager.log_service_debug(f"道具[{item_data.get('ID')}]图标加载失败:{icon_error}")
+                    self.avatar = pygame.Surface((55, 55), pygame.SRCALPHA)
+                    self.icon = pygame.Surface((40, 40), pygame.SRCALPHA)
                 self.rect = self.icon.get_rect()
                 continue
-            if raw_value is not None:
+            if not self.__is_blank(raw_value):
                 # 如果有 type 转换函数，则应用转换
                 if 'type' in mapping:
-                    value = mapping['type'](raw_value)
+                    try:
+                        value = mapping['type'](raw_value)
+                    except (TypeError, ValueError) as value_error:
+                        value = mapping['default']
+                        GameLogManager.log_service_debug(
+                            f"道具[{item_data.get('ID')}]字段[{config_key}]解析失败:{raw_value} => {value_error}"
+                        )
                 else:
                     value = raw_value
             else:
@@ -166,6 +186,10 @@ class Item(SpriteBase):
                 setattr(self, mapping['attr'], value)
             except AttributeError as attrE:
                 GameLogManager.log_service_debug(attrE)
+
+    @staticmethod
+    def __is_blank(value):
+        return value is None or (isinstance(value, str) and value.strip() == "")
 
     def __str__(self):
         info = {
@@ -267,9 +291,42 @@ class Item(SpriteBase):
 
         collect_script_data(self.primary_attr_id)
         collect_script_data(self.secondary_attr_id)
+        for attr_name, attr_val in self.get_enhance_fixed_attrs().items():
+            res["fixed"][attr_name] = res["fixed"].get(attr_name, 0) + attr_val
 
         return res
 
+    def get_enhance_fixed_attrs(self, level: int = None) -> dict:
+        """根据强化等级生成额外固定属性。这里只做公式入口, 后续可以改成读表。"""
+        target_level = int(self.enhance_level if level is None else level or 0)
+        if self.type != 1 or target_level <= 0:
+            return {}
+
+        bonus_attrs = {}
+        enhance_fields = [
+            ("命中", "hit"),
+            ("伤害", "damage"),
+            ("防御", "defense"),
+            ("闪躲", "dodge"),
+            ("攻击速度", "attack_speed"),
+            ("必杀率", "critical_rate"),
+            ("MaxHp", "max_hp"),
+            ("MaxMp", "max_mp"),
+            ("抗火", "fire_resistance"),
+            ("抗水", "water_resistance"),
+            ("抗毒", "poison_resistance"),
+        ]
+        ratio = 0.06 * target_level
+        for show_name, attr_name in enhance_fields:
+            base_val = int(getattr(self, attr_name, 0) or 0)
+            if base_val <= 0:
+                continue
+            bonus_attrs[show_name] = max(1, int(base_val * ratio))
+        return bonus_attrs
+
+    def get_display_name(self):
+        level = int(getattr(self, "enhance_level", 0) or 0)
+        return f"{self.name} +{level}" if level > 0 else self.name
 
     def get_display_attrs(self):
         """
@@ -286,6 +343,7 @@ class Item(SpriteBase):
             'MaxHp', 'MaxMp', '抗火', '抗水', '抗毒'
         ]
 
+        enhance_attrs = self.get_enhance_fixed_attrs()
         for config_key in combat_fields:
             mapping = self.FIELD_MAPPING.get(config_key)
             if not mapping:
@@ -296,7 +354,9 @@ class Item(SpriteBase):
 
             # 只有数值大于 0 才显示基础加成
             if isinstance(val, (int, float)) and val > 0:
-                display_results.append((f"{config_key}: +{val}", "#FFFF00"))
+                enhance_val = int(enhance_attrs.get(config_key, 0) or 0)
+                enhance_text = f" (+{enhance_val})" if enhance_val > 0 else ""
+                display_results.append((f"{config_key}: +{val}{enhance_text}", "#FFFF00"))
 
         # 2. 脚本额外增益属性 (绿色)
         # 过滤掉非战斗增益的字段

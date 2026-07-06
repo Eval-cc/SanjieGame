@@ -141,8 +141,9 @@ class SkillTreePanel:
     def _draw_node(self, skill: SkillConfig, rect: pygame.Rect):
         actor_level = int(getattr(self.actor, "level", 1) or 1)
         unlocked = skill.required_level <= actor_level
-        bg_color = (83, 61, 35) if unlocked else (48, 48, 48)
-        border_color = (238, 190, 91) if unlocked else (112, 112, 112)
+        learned = SkillSystem.get_actor_skill_level(self.actor, skill.group_id) >= skill.skill_level
+        bg_color = (83, 61, 35) if unlocked and learned else (52, 49, 44)
+        border_color = (238, 190, 91) if unlocked and learned else (112, 112, 112)
         pygame.draw.rect(self.surface, bg_color, rect, border_radius=4)
         pygame.draw.rect(self.surface, border_color, rect, 2, border_radius=4)
 
@@ -152,11 +153,12 @@ class SkillTreePanel:
             icon_path = os.path.join(SourceManager.ui_skill_path, skill.icon)
             if os.path.exists(icon_path):
                 icon = SourceManager.load(icon_path, [self.ICON_SIZE, self.ICON_SIZE]).copy()
-                if not unlocked:
+                if not unlocked or not learned:
                     icon.set_alpha(100)
                 self.surface.blit(icon, icon_rect)
 
-        lvl = GameFont.get_text_surface_line(str(skill.skill_level), True, 10, "#ffffff")
+        lvl_text = str(skill.skill_level if learned else 0)
+        lvl = GameFont.get_text_surface_line(lvl_text, True, 10, "#ffffff")
         self.surface.blit(lvl, (rect.right - lvl.width - 3, rect.bottom - lvl.height - 2))
         if SkillSystem.get_next_skill(self.actor, skill):
             marker = GameFont.get_text_surface_line("+", True, 12, "#66ff66")

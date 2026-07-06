@@ -55,6 +55,7 @@ class LocalDBManager:
         sql_list = self._get_sql_dict(f"{SourceManager.cfg_db_path}/本地SQLite数据库.sql")
         for table in sql_list.values():
             self.execute_non_query(table)
+        self._upgrade_default_tables()
         # 不使用get确保没有找到这个sql直接异常
         # 1. 系统设置表 (存全局配置)
         # self.execute_non_query(sql_list["system_settings"])
@@ -62,6 +63,33 @@ class LocalDBManager:
         # self.execute_non_query(sql_list["accounts"])
         # # 3. 角色表 (通过 account_id 关联账号)
         # self.execute_non_query(sql_list["fso"])
+
+    def _upgrade_default_tables(self):
+        """给旧本地存档补齐后来新增的列."""
+        self._ensure_columns("fso", {
+            "level": "INTEGER DEFAULT 1",
+            "curr_exp": "INTEGER DEFAULT 0",
+            "upgrade_exp": "INTEGER DEFAULT 100",
+            "skill_points": "INTEGER DEFAULT 50",
+            "skill_levels": "TEXT DEFAULT ''",
+        })
+
+    def _ensure_columns(self, table_name: str, columns: dict[str, str]):
+        existing_columns = self._get_table_columns(table_name)
+        if not existing_columns:
+            return
+        for column_name, column_def in columns.items():
+            if column_name in existing_columns:
+                continue
+            self.execute_non_query(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+
+    def _get_table_columns(self, table_name: str) -> set[str]:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            return {str(row["name"]) for row in cursor.fetchall()}
+        finally:
+            cursor.close()
 
 
     # ========== 封装的方法 ==========

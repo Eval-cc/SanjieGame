@@ -5,15 +5,19 @@
     <title>Chat</title>
 </head>
 <body>
-<div id="app" width="360" height="190" close="false" padding="0 8 0 8">
-    <p color="#8AD7FF" font-size="12">聊天</p>
-    <div id="chat_messages" height="84">
+<div id="app" width="372" height="248" close="false" padding="8 10 6 10" background-color="#050505">
+    <div id="chat_messages" width="348" height="92" padding="4 6 4 6" background-color="#101010">
         {{CHAT_MESSAGES}}
     </div>
     <row>
-        <input id="chat_input" type="text" width="265" height="24" placeholder="输入聊天或 -help" @submit="chat_submit" @history="chat_history"/>
+        {{CHANNEL_TABS}}
+    </row>
+    <row padding="6 0 0 0">
+        <img id="chat_face_toggle" src="{{FACE_BUTTON_SRC}}" width="30" height="30" img-size="30,30" @click="chat_faces_toggle" />
+        <input id="chat_input" type="text" width="220" height="24" placeholder="{{CURRENT_CHANNEL}}" @submit="chat_submit" @history="chat_history"/>
         <button id="chat_send_btn" width="56" height="24" @click="chat_send">发送</button>
     </row>
+    {{FACE_PANEL}}
 </div>
 </body>
 </html>

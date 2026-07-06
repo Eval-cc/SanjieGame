@@ -39,6 +39,10 @@ class GameWorldManager:
         return False
 
     @classmethod
+    def get_pick_item(cls, puid: str):
+        return cls.__pick_items.get(puid)
+
+    @classmethod
     def add_pick_item(cls, item: "Item", wx: int, wy: int, send_global: bool = False, puid: str = None):
         """
         给场景推送道具掉落的事件
@@ -48,8 +52,16 @@ class GameWorldManager:
         :param send_global: 是否需要推送世界
         :return:
         """
+        from src.character.PickableItem import PickableItem
+
         pid = PickableItem(item, wx, wy, send_global)
-        cls.__pick_items[pid.UID if puid is None else puid] = pid
+        if puid is not None and pid.UID != puid:
+            from src.manager.GameManager import GameManager
+
+            GameManager.remove(pid)
+            pid.UID = puid
+            GameManager.add(f"pick_item_{pid.UID}", pid)
+        cls.__pick_items[pid.UID] = pid
 
     @classmethod
     def remove_pick_item(cls, uid: str):
@@ -58,9 +70,13 @@ class GameWorldManager:
         :param uid:
         :return:
         """
-        if cls.__pick_items.get(uid):
-            cls.__pick_items[uid].destroy()
-            del cls.__pick_items[uid]
+        pick_item = cls.__pick_items.pop(uid, None)
+        if pick_item:
+            pick_item.destroy(notify_server=False)
+
+    @classmethod
+    def forget_pick_item(cls, uid: str):
+        cls.__pick_items.pop(uid, None)
 
     @classmethod
     def register_timed_event(cls, minutes: int, callback: Callable):

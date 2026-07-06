@@ -234,17 +234,19 @@ class GameEvent:
     def trigger_keyboard_event(event: pygame.Event | int, key_type: int):
         event_key = event if type(event) == int else event.key if hasattr(event, "key") else event
         if key_type == 6:
+            has_focused_input = GameEvent.has_focused_input()
             if not GameEvent.has_control_down:
                 lr_control = [1073742048, 1073742052]  # 左右ctrl
                 if event_key in lr_control:
                     GameLogManager.log_service_debug("左右ctrl")
                     GameEvent.has_control_down = True
             else:
-                event_fun = GameEvent.__global_event.get(f"ctrl_{global_key_dict.get(event_key)}")
-                if event_fun:
-                    event_fun()
-                GameLogManager.log_service_debug(f"触发快捷键事件,全局唯一,不用处理分发,code:[{event_key}]")
-            if GameEvent.has_control_down:
+                if not has_focused_input:
+                    event_fun = GameEvent.__global_event.get(f"ctrl_{global_key_dict.get(event_key)}")
+                    if event_fun:
+                        event_fun()
+                    GameLogManager.log_service_debug(f"触发快捷键事件,全局唯一,不用处理分发,code:[{event_key}]")
+            if GameEvent.has_control_down and not has_focused_input:
                 return
         else:
             GameEvent.has_key_down = False
@@ -290,3 +292,7 @@ class GameEvent:
     @staticmethod
     def all_input_pool():
         return GameEvent.__input_pool
+
+    @staticmethod
+    def has_focused_input() -> bool:
+        return any(getattr(component, "has_focus", False) for component in GameEvent.__input_pool)

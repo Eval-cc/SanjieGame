@@ -22,6 +22,7 @@ from src.manager.GameFont import GameFont
 from src.manager.GameManager import GameManager
 from src.manager.SourceManager import SourceManager
 from src.system.Animator import Animator
+from src.system.GameToast import GameToastManager
 
 if TYPE_CHECKING:
     from src.code.Item import Item
@@ -32,6 +33,8 @@ class PickableItem(SpriteBase):
     def __init__(self, item: "Item", world_x: int, world_y: int, send_global: bool = False):
         super().__init__([[f"pick_item_点击事件"], [1]])
         self.item: "Item" = item
+        self._picked = False
+        self._pickup_request_time = 0
 
         rand_name = "pick_item1" if item.count > 30 else "pick_item2" if item.type != 1 else "pickable_item"
         self.image = SourceManager.load(fr"{SourceManager.ui_system_path}\{rand_name}.png", [32, 32]).convert_alpha()
@@ -188,6 +191,7 @@ class PickableItem(SpriteBase):
             self.eff_animator_stick.update()
             self.eff_animator_stick.render(render_x - 50, render_y)
             GameManager.game_win.blit(self.image, (render_x, render_y))
+        self.__check_pickup_timeout()
 
     def render_mask(self):
         if not self.is_animating:
@@ -197,14 +201,71 @@ class PickableItem(SpriteBase):
             GameManager.game_win.blit(self.item_name_sur, (render_x + self.image.width // 2, render_y))
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
-        u_player = GameManager.get("主角")
-        u_player.bag.add_item_exist(self.item)
-        self.destroy()
-        return False
+        if self._picked:
+            return False
 
-    def destroy(self):
+        u_player = GameManager.get("主角")
+        if not u_player or u_player.bag.get_items_count() <= 0:
+            GameToastManager.add_message("背包剩余容量不足")
+            return False
+
+        self._picked = True
         w_server: "GameWorldServer" = GameManager.get_manager("w_server")
         if w_server:
+            self._pickup_request_time = pygame.time.get_ticks()
+            self.__request_pickup(w_server)
+            return False
+
+        self.complete_pickup()
+        return False
+
+    def __request_pickup(self, w_server: "GameWorldServer"):
+        w_server.send_msg('player_action', {
+            "actionData": {
+                'itemData': {
+                    "puid": self.UID,
+                    "uid": self.item.UID,
+                    "id": self.item.ID,
+                    "name": self.item.name,
+                    "count": self.item.count,
+                },
+                'type': "2",
+            }
+        })
+
+    def complete_pickup(self):
+        if not self._picked:
+            self._picked = True
+
+        u_player = GameManager.get("主角")
+        if not u_player:
+            self._picked = False
+            return False
+
+        if not u_player.bag.add_item_exist(self.item):
+            self._picked = False
+            self._pickup_request_time = 0
+            GameToastManager.add_message("背包剩余容量不足")
+            return False
+        self._pickup_request_time = 0
+        self.destroy(notify_server=False)
+        return True
+
+    def cancel_pickup(self):
+        self._picked = False
+        self._pickup_request_time = 0
+        return False
+
+    def __check_pickup_timeout(self):
+        if not self._picked or self._pickup_request_time <= 0:
+            return
+        if pygame.time.get_ticks() - self._pickup_request_time > 3000:
+            self.cancel_pickup()
+            GameToastManager.add_message("拾取请求超时")
+
+    def destroy(self, notify_server: bool = True):
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if notify_server and w_server:
             w_server.send_msg('player_action', {
                 "actionData": {
                     'itemData': {
@@ -215,6 +276,9 @@ class PickableItem(SpriteBase):
                     },
                     'type': "2",  # 通知服务器. 这个道具已经被捡起来了
                 }
-            })
+        })
         super().destroy()
+        from src.manager.GameWorldManager import GameWorldManager
+
+        GameWorldManager.forget_pick_item(self.UID)
         GameManager.remove(self)  # 从游戏管理器中移除

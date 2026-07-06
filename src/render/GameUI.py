@@ -38,6 +38,7 @@ class GameUI(SpriteBase):
         self.__sort_surface: dict[str:dict] = {}
         self.__hover_surface = None
         self.__click_surface = None
+        self.__press_surface = None
 
         self.__sort_layer_layer()
 
@@ -346,6 +347,7 @@ class GameUI(SpriteBase):
         if self.get_click_sprite_index() >= 0:
             target: dict = self.rect_list[self.get_click_sprite_index()]
             self.__click_surface = target
+            self.__press_surface = target
 
             if is_right_click:
                 cl = target.get("right_mouse_down")
@@ -384,12 +386,14 @@ class GameUI(SpriteBase):
 
     def mouse_up(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         super().mouse_up(event)
-        if self.__click_surface is not None:
-            up_fun = self.__click_surface.get("mouse_up")
-            if self.__click_surface.get("frame"):
-                self.__click_surface.get("frame")["index"] = 0
+        release_surface = self.__press_surface or self.__click_surface
+        if release_surface is not None:
+            up_fun = release_surface.get("mouse_up")
+            if release_surface.get("frame"):
+                release_surface.get("frame")["index"] = 0
             if up_fun:
                 up_fun(event=event)
+        self.__press_surface = None
         if self.__hover_surface is None:
             return True
         # 每次松开前都需要更新一下当前ui的可拖拽坐标

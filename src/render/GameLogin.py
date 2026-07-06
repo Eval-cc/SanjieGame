@@ -19,7 +19,6 @@ from random import choice
 from typing import TYPE_CHECKING, Any, List, Union
 import pygame
 import cv2
-import numpy as np
 from functools import partial
 
 from src.character.Player import Player
@@ -130,6 +129,12 @@ class GameLogin(SpriteBase):
         # 状态标志
         self.load_progress = 0
         self.current_frame = None  # 当前显示的帧
+        self._frame_lock = threading.Lock()
+        self._video_stop_event = threading.Event()
+        self._video_restart_event = threading.Event()
+        self._pending_frame_bytes = None
+        self._pending_frame_dirty = False
+        self._video_frame_size = (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
 
     def _start_async_loading(self):
         """启动后台加载线程"""
@@ -138,36 +143,72 @@ class GameLogin(SpriteBase):
 
     def _load_video_resource(self):
         """加载视频资源"""
+        cap = None
         try:
             self.video_ready = False
-            self.cap = cv2.VideoCapture(self.video_path)
+            self.playing = False
+            cap = cv2.VideoCapture(self.video_path)
 
-            if not self.cap.isOpened():
+            if not cap.isOpened():
                 raise IOError(f"无法打开CG文件: {self.video_path}")
 
             # 获取视频信息
-            self.original_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.original_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+            self.total_frames = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 1))
             self._update_frame_duration()
 
             # print(f"视频加载成功: {self.total_frames}帧 @ {self.original_fps}fps")
+            next_frame_time = time.perf_counter()
 
-            # 预加载第一帧
-            ret, frame = self.cap.read()
-            if ret:
-                self.current_frame = self._convert_frame(frame)
-                self.current_frame_pos = 1
-                self.load_progress = 1 / self.total_frames
+            while not self._video_stop_event.is_set():
+                if self._video_restart_event.is_set():
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    self.current_frame_pos = 0
+                    self._video_restart_event.clear()
+                    next_frame_time = time.perf_counter()
 
-            self.video_ready = True
-            time.sleep(1)
-            self.playing = True
-            self.last_frame_time = pygame.time.get_ticks() / 1000.0
+                if self.video_ready and not self.playing:
+                    self._video_stop_event.wait(0.02)
+                    next_frame_time = time.perf_counter()
+                    continue
+
+                ret, frame = cap.read()
+                if not ret:
+                    if self.loop:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    self.playing = False
+                    break
+
+                frame_bytes = self._prepare_video_frame(frame)
+                frame_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                with self._frame_lock:
+                    self._pending_frame_bytes = frame_bytes
+                    self._pending_frame_dirty = True
+                    self.current_frame_pos = frame_pos
+                    self.load_progress = frame_pos / self.total_frames
+
+                if not self.video_ready:
+                    self.video_ready = True
+                    self.playing = True
+                    self.show_static_bg = False
+                    self.last_frame_time = pygame.time.get_ticks() / 1000.0
+
+                next_frame_time += self.frame_duration
+                sleep_time = next_frame_time - time.perf_counter()
+                if sleep_time > 0:
+                    self._video_stop_event.wait(sleep_time)
+                else:
+                    next_frame_time = time.perf_counter()
 
         except Exception as e:
             print(f"视频加载错误: {e}")
             self.video_ready = False
             self.playing = False
+            self.show_static_bg = True
+        finally:
+            if cap:
+                cap.release()
 
     def _load_login_ui(self, **args):
         """
@@ -325,6 +366,11 @@ class GameLogin(SpriteBase):
                     "attack": 10,
                     "defense": 10,
                     "attack_speed": 5,
+                    "level": 1,
+                    "curr_exp": 0,
+                    "upgrade_exp": 100,
+                    "skill_points": 50,
+                    "skill_levels": "",
                     "anim_model": "3",
                     "items": "1,0,0,1,1|1,0,3,2,3|1,1,3,3,3|1,2,3,4,3|1,3,3,2,3|1,3,3,3,3",
                 }
@@ -365,76 +411,42 @@ class GameLogin(SpriteBase):
 
     def _update_frame_duration(self):
         """更新帧持续时间"""
-        self.frame_duration = 1.0 / (self.original_fps * self.playback_speed)
+        fps = max(float(self.original_fps or 30), 1.0)
+        speed = max(float(self.playback_speed or 1.0), 0.1)
+        self.frame_duration = 1.0 / (fps * speed)
 
     def _get_video_frame(self):
         """获取当前视频帧"""
-        if not self.cap or not self.video_ready:
-            return None
-
-        ret, frame = self.cap.read()
-        if not ret:
-            if self.loop:
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = self.cap.read()
-                if not ret:
-                    return None
-            else:
-                return None
-
-        self.current_frame_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-        self.load_progress = self.current_frame_pos / self.total_frames
-
-        # 转换图像格式
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pygame_surface = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2))).convert()
-        return pygame.transform.scale(
-            pygame_surface,
-            (self.gm.game_win_rect.width, self.gm.game_win_rect.height)
-        )
+        return self.current_frame
 
     def update(self, delta_time: float):
         """
         更新动画状态
         :param delta_time: 距离上次更新的时间(秒)
         """
-        if not self.playing or not self.video_ready:
+        if not self.video_ready:
             return
 
-        # 累积时间
-        self.accumulated_time += delta_time
+        frame_bytes = None
+        with self._frame_lock:
+            if self._pending_frame_dirty and self._pending_frame_bytes is not None:
+                frame_bytes = self._pending_frame_bytes
+                self._pending_frame_dirty = False
 
-        # 处理帧更新
-        while self.accumulated_time >= self.frame_duration:
-            self.accumulated_time -= self.frame_duration
-
-            # 获取新帧
-            ret, frame = self.cap.read()
-            if not ret:
-                if self.loop:
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ret, frame = self.cap.read()
-                    if not ret:
-                        break
-                else:
-                    self.playing = False
-                    break
-
-            self.current_frame = self._convert_frame(frame)
-            self.current_frame_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-            self.load_progress = self.current_frame_pos / self.total_frames
+        if frame_bytes is not None:
+            self.current_frame = self._rgb_frame_to_surface(frame_bytes)
 
     def _convert_frame(self, frame):
-        # 1. 缩小 OpenCV 原始帧的大小（在转换为 Surface 前缩放效率更高）
-        frame = cv2.resize(frame, (self.gm.game_win_rect.width, self.gm.game_win_rect.height))
-        # 2. 转换颜色空间
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # 3. 交换维度并创建 Surface
-        # 注意：使用 swapaxes 通常比 np.transpose 在某些版本上更快
-        # return pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
+        return self._rgb_frame_to_surface(self._prepare_video_frame(frame))
 
-        surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-        return surface.convert()  # 这一步至关重要
+    def _prepare_video_frame(self, frame):
+        """在线程中处理 OpenCV 帧，避免主循环承担解码和缩放成本。"""
+        frame = cv2.resize(frame, self._video_frame_size, interpolation=cv2.INTER_LINEAR)
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).tobytes()
+
+    def _rgb_frame_to_surface(self, frame_bytes):
+        """在主线程中把 RGB 数据转换成 Pygame Surface。"""
+        return pygame.image.frombuffer(frame_bytes, self._video_frame_size, "RGB").convert()
 
     def render(self):
         """渲染当前帧"""
@@ -455,9 +467,9 @@ class GameLogin(SpriteBase):
     def render_sticky(self):
         if not self.playing and self.static_bg is not None:
             self.gm.game_win.blit(self.static_bg, (0, 0))
-        else:
-            for _com in self.__components:
-                _com.render()
+
+        for _com in self.__components:
+            _com.render()
 
     def _render_loading_status(self, delta_time: float):
         """渲染加载状态"""
@@ -506,15 +518,13 @@ class GameLogin(SpriteBase):
     def restart_animation(self):
         """重新播放动画"""
         if self.video_ready:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self._video_restart_event.set()
             self.playing = True
             self.show_static_bg = False
 
     def cleanup(self, clear_bg: bool = True):
         """清理资源"""
-        if self.cap:
-            self.cap.release()
-            self.cap = None
+        self._stop_video_thread()
 
         # 清理所有组件
         for component in self.__components:
@@ -531,6 +541,16 @@ class GameLogin(SpriteBase):
                 pygame.USEREVENT,
                 {"callback": callback}
             ))
+
+    def _stop_video_thread(self):
+        stop_event = getattr(self, "_video_stop_event", None)
+        if stop_event:
+            stop_event.set()
+        loading_thread = getattr(self, "loading_thread", None)
+        if loading_thread and loading_thread.is_alive() and loading_thread is not threading.current_thread():
+            loading_thread.join(timeout=1.0)
+        self.loading_thread = None
+        self.cap = None
 
     def login_ui_move(self, rect: pygame.Rect):
         """

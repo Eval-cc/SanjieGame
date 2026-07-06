@@ -20,6 +20,7 @@ class ClickEffectSystem(SpriteBase):
         self.layer_order = 2
         self.frames: list[pygame.Surface] = []
         self.effects: list[dict] = []
+        self.__dedupe_frames = 6
         self.__load_frames()
 
     def __load_frames(self):
@@ -36,9 +37,20 @@ class ClickEffectSystem(SpriteBase):
     def add_world(self, world_x: int, world_y: int):
         if not self.frames:
             return
+        world_x = int(world_x)
+        world_y = int(world_y)
+        dedupe_radius = max(1, getattr(self.gm, "game_box_size", 20) * 3)
+        dedupe_radius_sq = dedupe_radius * dedupe_radius
+        for effect in self.effects:
+            if effect.get("frame", 0) > self.__dedupe_frames:
+                continue
+            dx = effect["x"] - world_x
+            dy = effect["y"] - world_y
+            if dx * dx + dy * dy <= dedupe_radius_sq:
+                return
         self.effects.append({
-            "x": int(world_x),
-            "y": int(world_y),
+            "x": world_x,
+            "y": world_y,
             "frame": 0,
             "timer": 0,
             "delay": 3,

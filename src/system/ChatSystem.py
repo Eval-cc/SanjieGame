@@ -8,10 +8,13 @@
 
 import html
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import uuid4
+
+import pygame
 
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
@@ -41,14 +44,32 @@ class ChatSystem:
 
     channel_colors = {
         "系统": "#FFE08A",
+        "一般": "#FFFFFF",
         "本地": "#FFFFFF",
+        "队伍": "#7DFF9A",
+        "诸侯": "#D7A8FF",
         "世界": "#8AD7FF",
         "GM": "#FF9B9B",
     }
+    channel_order = ["一般", "队伍", "诸侯", "世界", "系统"]
+    channel_labels = {
+        "一般": "一般频道",
+        "队伍": "队伍频道",
+        "诸侯": "诸侯频道",
+        "世界": "世界频道",
+        "系统": "系统频道",
+    }
+    face_token_pattern = re.compile(r"\[微笑([1-9]\d?)\]|\[f([1-9]\d?)\]")
+    face_cols = 13
+    face_rows = 13
+    face_size = 32
+    face_display_size = 20
+    face_panel_display_size = 32
 
     def __init__(self, gm: "GameManager"):
         self.gm = gm
         self.dialog = GameDialog(gm, self.dialog_key)
+        self.face_dialog = GameDialog(gm, "聊天表情面板")
         self.item_detail_dialog = GameDialog(gm, "聊天道具信息")
         self.messages: list[ChatMessage] = []
         self.pending_item_links: list[dict] = []
@@ -57,8 +78,14 @@ class ChatSystem:
         self.history_index: int | None = None
         self.history_draft = ""
         self.message_scroll = 0
+        self.current_channel = "一般"
+        self.show_face_panel = False
+        self.face_cache_name = f"chat_faces_{self.face_cols}x{self.face_rows}_{self.face_size}"
+        self.face_cache_dir = os.path.join(SourceManager.cfg_task_path, self.face_cache_name)
+        self.__faces_ready = False
         self.template_path = os.path.join(SourceManager.cfg_ui_path, "game_chat.html")
         self.generated_path = os.path.join(SourceManager.cfg_task_path, "__game_chat_generated.html")
+        self.face_panel_path = os.path.join(SourceManager.cfg_task_path, "__chat_face_panel_generated.html")
         self.item_detail_path = os.path.join(SourceManager.cfg_task_path, "__chat_item_detail_generated.html")
 
     def show(self):
@@ -68,25 +95,38 @@ class ChatSystem:
             return
 
         if not self.messages:
-            self.add_message("系统", "三界奇谈", "输入 -help 查看可用命令", render=False)
+            _msg = ["抵制不良游戏，拒绝盗版游戏。","注意自我保护，谨防受骗上当。","适度游戏益脑，沉迷游戏伤身。","合理安排时间，享受健康生活。"]
+            for m in _msg:
+                self.add_message( "系统","", m, render=False)
         self.render()
 
     def close(self):
         self.dialog.close_dialog()
+        self.face_dialog.close_dialog()
 
     def render(self):
-        current_input = ""
+        current_input_state = ""
         had_focus = False
         if self.dialog.visible():
-            current_input = self.dialog.get_val(self.input_id) or ""
+            current_input_state = self.dialog.get_component_state(self.input_id) or self.dialog.get_val(self.input_id) or ""
             had_focus = self.dialog.has_focus()
 
         with open(self.template_path, "r", encoding="utf-8") as f:
             template = f.read()
 
         message_html = self.__build_messages_html()
+        channel_html = self.__build_channel_tabs_html()
+        face_button_src = self.__face_img_src(1)
+        channel_label = html.escape(self.channel_labels.get(self.current_channel, self.current_channel))
         with open(self.generated_path, "w", encoding="utf-8") as f:
-            f.write(template.replace("{{CHAT_MESSAGES}}", message_html))
+            f.write(
+                template
+                .replace("{{CHAT_MESSAGES}}", message_html)
+                .replace("{{CHANNEL_TABS}}", channel_html)
+                .replace("{{FACE_BUTTON_SRC}}", face_button_src)
+                .replace("{{FACE_PANEL}}", "")
+                .replace("{{CURRENT_CHANNEL}}", channel_label)
+            )
 
         event_dict = self.__build_dialog_events()
         self.dialog.show_dialog(
@@ -96,7 +136,7 @@ class ChatSystem:
             overwrite_path=True,
             dialog_event_dict=event_dict,
             loc="bottom_left",
-            load_val={self.input_id: current_input},
+            load_val={self.input_id: current_input_state},
             listen_keyboard=lambda: self.dialog.has_focus(),
             esc_close=False,
         )
@@ -122,7 +162,7 @@ class ChatSystem:
         player = self.gm.get("主角")
         sender = getattr(player, "name", "") or "我"
         item_links = self.__consume_pending_item_links(text)
-        self.add_message("本地", sender, text, item_links=item_links)
+        self.add_message(self.current_channel, sender, text, item_links=item_links)
         self.__send_network_message(text, item_links)
         self.dialog.focus(self.input_id)
 
@@ -194,11 +234,58 @@ class ChatSystem:
         if not hasattr(network_client, "send_chat"):
             return
         try:
-            network_client.send_chat(text, item_links=item_links)
+            network_client.send_chat(text, channel=self.current_channel, item_links=item_links)
         except TypeError:
             network_client.send_chat(text)
         except Exception as exc:
             GameLogManager.log_service_error(f"发送聊天消息失败:{exc}")
+
+    def switch_channel(self, channel: str):
+        if channel not in self.channel_order:
+            return False
+        self.current_channel = channel
+        self.show_face_panel = False
+        self.render()
+        self.dialog.focus(self.input_id)
+        return False
+
+    def toggle_face_panel(self):
+        input_had_focus = self.dialog.has_focus()
+        self.show_face_panel = not self.show_face_panel
+        if self.show_face_panel:
+            self.render_face_panel()
+        else:
+            self.face_dialog.close_dialog()
+        self.dialog.focus(self.input_id, move_cursor_to_end=not input_had_focus)
+        return False
+
+    def insert_face(self, face_index: int):
+        if face_index < 1 or face_index > self.face_cols * self.face_rows:
+            return False
+        if not self.dialog.visible():
+            self.show()
+        if not self.dialog.has_focus():
+            self.dialog.focus(self.input_id, move_cursor_to_end=True)
+        self.dialog.insert_text(self.input_id, self.__face_token(face_index))
+        self.show_face_panel = False
+        self.face_dialog.close_dialog()
+        self.dialog.focus(self.input_id)
+        return False
+
+    def render_face_panel(self):
+        with open(self.face_panel_path, "w", encoding="utf-8") as f:
+            f.write(self.__build_face_panel_html())
+
+        self.face_dialog.show_dialog(
+            self.face_panel_path,
+            render_x=10,
+            render_y=35,
+            overwrite_path=True,
+            dialog_event_dict=self.__build_dialog_events(),
+            loc="bottom_left",
+            listen_keyboard=False,
+            esc_close=True,
+        )
 
     def insert_item_link(self, item):
         """把背包道具插入聊天输入框, 发送时再生成快照."""
@@ -217,7 +304,7 @@ class ChatSystem:
 
         current_input = self.dialog.get_val(self.input_id) or ""
         separator = "" if not current_input or current_input.endswith((" ", "　")) else " "
-        self.dialog.set_val(self.input_id, f"{current_input}{separator}{label}")
+        self.dialog.insert_text(self.input_id, f"{separator}{label}")
         self.dialog.focus(self.input_id)
         GameToastManager.add_message(f"已插入道具:{item_name}")
         return True
@@ -230,7 +317,7 @@ class ChatSystem:
         args = command.split()
         cmd = args[0].lower()
         if cmd in ("help", "?"):
-            self.add_message("系统", "GM", "-add money 数量 | -add item ID [数量] [强化] [品质] [秒] | -moveto [地图ID] x,y")
+            self.add_message("系统", "GM", "-add money 数量 | -add item ID [数量] [强化] [品质] [秒] | -moveto [地图ID] 格子X,格子Y")
             return
 
         if cmd == "clear":
@@ -350,7 +437,7 @@ class ChatSystem:
 
     def __gm_moveto(self, args: list[str]):
         if not args:
-            self.add_message("系统", "GM", "用法: -moveto x,y 或 -moveto 地图ID x,y")
+            self.add_message("系统", "GM", "用法: -moveto 格子X,格子Y 或 -moveto 地图ID 格子X,格子Y")
             return
 
         from src.manager.GameMapManager import GameMapManager
@@ -366,7 +453,7 @@ class ChatSystem:
             map_id = args[0]
             coord_text = f"{args[1]},{args[2]}"
         else:
-            self.add_message("系统", "GM", "坐标格式错误, 示例: -moveto 1024 300,420")
+            self.add_message("系统", "GM", "坐标格式错误, 示例: -moveto 1024 92,78")
             return
 
         pos = self.__parse_coord(coord_text)
@@ -374,19 +461,26 @@ class ChatSystem:
             self.add_message("系统", "GM", "坐标格式错误, 请使用 x,y")
             return
 
-        x, y = pos
+        grid_x, grid_y = pos
+        world_x, world_y = self.__grid_to_world_pos(grid_x, grid_y)
         player = self.gm.get("主角")
         if not player:
             self.add_message("系统", "GM", "当前没有可移动的角色")
             return
 
         try:
-            if map_id:
-                GameMapManager.change_map(map_id, x, y)
-                self.add_message("系统", "GM", f"已移动到地图 {map_id}: {x},{y}")
+            move_result = GameMapManager.move_player_to(map_id, world_x, world_y)
+            result_map_id = move_result.get("map_id") or GameMapManager.map_id
+            result_grid_x = move_result.get("grid_x", grid_x)
+            result_grid_y = move_result.get("grid_y", grid_y)
+            if move_result.get("mode") == "network":
+                prefix = "已通知服务端移动到"
+            elif move_result.get("mode") == "map_changed":
+                prefix = "已移动到地图"
             else:
-                player.set_pos(x, y)
-                self.add_message("系统", "GM", f"已移动到当前地图 {GameMapManager.map_id}: {x},{y}")
+                prefix = "已移动到当前地图"
+            adjusted_text = " (已避开障碍点)" if move_result.get("adjusted") else ""
+            self.add_message("系统", "GM", f"{prefix} {result_map_id}: {result_grid_x},{result_grid_y}{adjusted_text}")
         except Exception as exc:
             self.add_message("系统", "GM", f"移动失败: {exc}")
 
@@ -399,6 +493,12 @@ class ChatSystem:
             return int(parts[0]), int(parts[1])
         except ValueError:
             return None
+
+    @staticmethod
+    def __grid_to_world_pos(grid_x: int, grid_y: int):
+        from src.manager.GameManager import GameManager
+
+        return grid_x * GameManager.game_box_size, grid_y * GameManager.game_box_size
 
     def __parse_optional_int(self, args: list[str], index: int, default: int, error_message: str):
         if len(args) <= index:
@@ -420,7 +520,10 @@ class ChatSystem:
             bag.add_item(item_id, count, expire_time=expire_time, quality=quality, enhance_level=enhance_level)
             return
 
-        max_count = int(item_data.get("最大使用次数", count) or count)
+        try:
+            max_count = int(item_data.get("最大使用次数", count) or count)
+        except (TypeError, ValueError):
+            max_count = count
         max_count = max(1, max_count)
         remaining = count
         while remaining > 0:
@@ -437,10 +540,7 @@ class ChatSystem:
             if msg.item_links:
                 lines.append(self.__build_rich_message_html(msg))
                 continue
-            channel = html.escape(msg.channel)
-            sender = html.escape(msg.sender)
-            content = html.escape(msg.content)
-            lines.append(f'<p color="{msg.color}" font-size="12">[{channel}] {sender}: {content}</p>')
+            lines.append(self.__build_rich_message_html(msg))
         return "\n            ".join(lines)
 
     def __build_dialog_events(self):
@@ -448,9 +548,14 @@ class ChatSystem:
             "chat_send": self.send_current_text,
             "chat_submit": self.send_text,
             "chat_history": self.switch_input_history,
+            "chat_faces_toggle": self.toggle_face_panel,
             "__scroll_up": self.scroll_messages_up,
             "__scroll_down": self.scroll_messages_down,
         }
+        for channel in self.channel_order:
+            event_dict[f"chat_channel_{channel}"] = lambda ch=channel: self.switch_channel(ch)
+        for face_index in range(1, self.face_cols * self.face_rows + 1):
+            event_dict[f"chat_face_{face_index}"] = lambda idx=face_index: self.insert_face(idx)
         for msg in self.__visible_messages():
             for link in msg.item_links:
                 snapshot = link.get("snapshot") or self.item_snapshots.get(link.get("snapshot_id"))
@@ -514,23 +619,138 @@ class ChatSystem:
         if cursor < len(content):
             segments.append(("text", content[cursor:], None))
 
+        segments = self.__expand_face_segments(segments)
         children = []
         for kind, text, link in segments:
             if not text:
                 continue
-            safe_text = html.escape(str(text))
-            width = self.__chat_segment_width(str(text))
-            if kind == "link" and link:
+            if kind == "face":
+                face_src = self.__face_img_src(int(text))
+                if face_src:
+                    children.append(
+                        f'<img src="{face_src}" width="{self.face_display_size}" height="{self.face_display_size}" img-size="{self.face_display_size},{self.face_display_size}" />'
+                    )
+                else:
+                    children.append(
+                        f'<p width="48" color="{msg.color}" font-size="12">{html.escape(self.__face_token(int(text)))}</p>'
+                    )
+            elif kind == "link" and link:
+                safe_text = html.escape(str(text))
+                width = self.__chat_segment_width(str(text))
                 event_key = self.__item_event_key(link)
                 children.append(
                     f'<a width="{width}" color="#64C8FF" font-size="12" @click="{event_key}">{safe_text}</a>'
                 )
             else:
+                safe_text = html.escape(str(text))
+                width = self.__chat_segment_width(str(text))
                 children.append(f'<p width="{width}" color="{msg.color}" font-size="12">{safe_text}</p>')
 
         if not children:
             return f'<p color="{msg.color}" font-size="12">{html.escape(content)}</p>'
         return f'<row>{"".join(children)}</row>'
+
+    def __expand_face_segments(self, segments: list[tuple[str, str, dict | None]]):
+        expanded = []
+        for kind, text, link in segments:
+            if kind != "text":
+                expanded.append((kind, text, link))
+                continue
+            cursor = 0
+            for match in self.face_token_pattern.finditer(str(text)):
+                face_index = int(match.group(1) or match.group(2))
+                if face_index > self.face_cols * self.face_rows:
+                    continue
+                if match.start() > cursor:
+                    expanded.append(("text", str(text)[cursor:match.start()], None))
+                expanded.append(("face", str(face_index), None))
+                cursor = match.end()
+            if cursor < len(str(text)):
+                expanded.append(("text", str(text)[cursor:], None))
+        return expanded
+
+    def __build_channel_tabs_html(self):
+        buttons = []
+        for channel in self.channel_order:
+            label = self.channel_labels.get(channel, channel)
+            state = "active" if channel == self.current_channel else "idle"
+            if channel == self.current_channel:
+                label = f">{label}"
+            color = "#FFE08A" if channel == self.current_channel else "#FFFFFF"
+            buttons.append(
+                f'<button id="chat_channel_{channel}_{state}" width="68" height="24" color="{color}" @click="chat_channel_{channel}">{html.escape(label)}</button>'
+            )
+        return "\n        ".join(buttons)
+
+    def __build_face_panel_html(self):
+        self.__ensure_face_assets()
+        cells = []
+        for face_index in range(1, self.face_cols * self.face_rows + 1):
+            face_src = self.__face_img_src(face_index)
+            cells.append(
+                f'<li id="chat_face_{face_index}" width="{self.face_panel_display_size}" height="{self.face_panel_display_size}" margin="2" padding="0" tight="true" background-color="#050505" @click="chat_face_{face_index}">'
+                f'<img src="{face_src}" width="{self.face_panel_display_size}" height="{self.face_panel_display_size}" img-size="{self.face_panel_display_size},{self.face_panel_display_size}" />'
+                '</li>'
+            )
+
+        return "\n".join([
+            '<!DOCTYPE html>',
+            '<html lang="en">',
+            '<head><meta charset="UTF-8"><title>Faces</title></head>',
+            '<body>',
+            '<div id="app" width="306" height="462" close="false" padding="8 8 8 8" background-color="#050505">',
+            # '<div id="app" width="256" height="256" close="false" padding="8 8 8 8" background-color="#050505">',
+            '<ul width="256" margin="2">',
+            *cells,
+            '</ul>',
+            '</div>',
+            '</body>',
+            '</html>',
+        ])
+
+    def __ensure_face_assets(self):
+        if self.__faces_ready:
+            return
+        face_path = os.path.join(SourceManager.ui_system_path, "faces.png")
+        if not os.path.exists(face_path):
+            GameLogManager.log_service_error(f"聊天表情图不存在:{face_path}")
+            self.__faces_ready = True
+            return
+
+        os.makedirs(self.face_cache_dir, exist_ok=True)
+        try:
+            sheet = SourceManager.load(face_path)
+            target_sheet_size = (self.face_cols * self.face_size, self.face_rows * self.face_size)
+            if sheet.get_size() != target_sheet_size:
+                sheet = pygame.transform.smoothscale(sheet, target_sheet_size)
+            for face_index in range(1, self.face_cols * self.face_rows + 1):
+                target = os.path.join(self.face_cache_dir, f"face_{face_index}.png")
+                if os.path.exists(target) and pygame.image.load(target).get_size() == (self.face_size, self.face_size):
+                    continue
+                col = (face_index - 1) % self.face_cols
+                row = (face_index - 1) // self.face_cols
+                rect = pygame.Rect(col * self.face_size, row * self.face_size, self.face_size, self.face_size)
+                pygame.image.save(sheet.subsurface(rect), target)
+            self.__faces_ready = True
+        except Exception as exc:
+            self.__faces_ready = True
+            GameLogManager.log_service_error(f"生成聊天表情缓存失败:{exc}")
+
+    def __face_img_src(self, face_index: int):
+        if face_index < 1 or face_index > self.face_cols * self.face_rows:
+            return ""
+        self.__ensure_face_assets()
+        rel_path = f"{self.face_cache_name}/face_{face_index}.png"
+        if not os.path.exists(os.path.join(SourceManager.cfg_task_path, rel_path)):
+            return ""
+        return rel_path
+
+    @staticmethod
+    def __face_meaning(face_index: int):
+        return "微笑"
+
+    def __face_token(self, face_index: int):
+        return f"[{self.__face_meaning(face_index)}{face_index}]"
 
     @staticmethod
     def __chat_segment_width(text: str):
@@ -557,7 +777,7 @@ class ChatSystem:
         return {
             "item_id": item_id,
             "uid": str(getattr(item, "UID", "") or ""),
-            "name": str(getattr(item, "name", "") or "未知道具"),
+            "name": str(item.get_display_name() if hasattr(item, "get_display_name") else getattr(item, "name", "") or "未知道具"),
             "count": int(getattr(item, "count", 1) or 1),
             "quality": str(getattr(item, "quality", "") or "white"),
             "enhance_level": int(getattr(item, "enhance_level", 0) or 0),
@@ -622,7 +842,6 @@ class ChatSystem:
         trade_text = "可交易" if snapshot.get("can_trade") else "不可交易"
         count = int(snapshot.get("count", 1) or 1)
         level = int(snapshot.get("level", 0) or 0)
-        enhance_level = int(snapshot.get("enhance_level", 0) or 0)
         money = int(snapshot.get("money", 0) or 0)
         points = int(snapshot.get("points", 0) or 0)
         icon_src = self.__chat_item_icon_src(snapshot)
@@ -646,8 +865,6 @@ class ChatSystem:
             f'<p color="#FFFFFF" font-size="12">数量:{count}</p>',
             f'<p color="#FFFFFF" font-size="12">有效期:{expire_text}</p>',
         ]
-        if enhance_level > 0:
-            body.append(f'<p color="{quality_color}" font-size="12">强化等级:+{enhance_level}</p>')
         if money > 0:
             body.append(f'<p color="#FFE08A" font-size="12">价值:{money} 金币</p>')
         if points > 0:

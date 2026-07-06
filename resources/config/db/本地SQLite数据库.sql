@@ -71,6 +71,26 @@ CREATE TABLE IF NOT EXISTS fso
                                    INTEGER,
                                    attack_speed
                                    INTEGER,
+                                   level
+                                   INTEGER
+                                   DEFAULT
+                                   1,
+                                   curr_exp
+                                   INTEGER
+                                   DEFAULT
+                                   0,
+                                   upgrade_exp
+                                   INTEGER
+                                   DEFAULT
+                                   100,
+                                   skill_points
+                                   INTEGER
+                                   DEFAULT
+                                   50,
+                                   skill_levels
+                                   TEXT
+                                   DEFAULT
+                                   '',
                                    anim_model
                                    TEXT,
                                    items

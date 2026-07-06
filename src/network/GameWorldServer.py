@@ -68,6 +68,7 @@ class GameWorldServer(SpriteBase):
         # 玩家数据
         self.players: Dict[str, Dict[str, Any]] = {}
         self.chat_messages: List[str] = []
+        self._confirmed_pickups = set()
 
         # 性能优化
         self._last_sent_pos = None
@@ -85,6 +86,39 @@ class GameWorldServer(SpriteBase):
 
         # 设置事件处理器
         self._setup_event_handlers()
+
+    def _add_pickup_payload_to_bag(self, item_payload: dict[str, Any]) -> bool:
+        if not item_payload:
+            return False
+
+        item_id = item_payload.get("id")
+        if not item_id:
+            GameLogManager.log_service_error(f"服务端拾取成功但缺少道具ID: {item_payload}")
+            return False
+
+        item_data = SourceManager.get_csv("items", str(item_id))
+        if item_data is None:
+            GameLogManager.log_service_error(f"服务端拾取成功但本地找不到道具配置: {item_id}")
+            return False
+
+        item_data = dict(item_data)
+        item_data["__pos"] = [0, 0, 0]
+        item = Item(item_data)
+        if item_payload.get("uid"):
+            item.UID = str(item_payload.get("uid"))
+        try:
+            item.count = int(item_payload.get("count", item.count))
+        except (TypeError, ValueError):
+            GameLogManager.log_service_error(f"服务端拾取道具数量异常: {item_payload}")
+
+        player = self.gm.get("主角") if self.gm else None
+        if not player:
+            return False
+
+        if not player.bag.add_item_exist(item):
+            GameToastManager.add_message("背包剩余容量不足")
+            return False
+        return True
 
     def _setup_event_handlers(self):
         """设置同步事件处理器"""
@@ -190,13 +224,48 @@ class GameWorldServer(SpriteBase):
                     world_x = data.get('itemData').get("world_x")
                     world_y = data.get('itemData').get("world_y")
                     item_data: dict[str, str] = SourceManager.get_csv("items", data.get('itemData').get("id"))
+                    if item_data is None:
+                        GameLogManager.log_service_error(f"远程掉落道具配置不存在: {data}")
+                        return
+                    item_data = dict(item_data)
                     item_data["__pos"] = [0, 0, 0]
                     item = Item(item_data)
-                    item.count = data.get('itemData').get("count")
+                    try:
+                        item.count = int(data.get('itemData').get("count", item.count))
+                    except (TypeError, ValueError):
+                        GameLogManager.log_service_error(f"远程掉落道具数量异常: {data}")
                     GameWorldManager.add_pick_item(item, world_x, world_y, False, puid)
             # 2 是被人捡起来了. 或者过期了?
             elif data.get('type') == "2":
                 GameWorldManager.remove_pick_item(data.get('itemData').get("puid"))
+
+        @self.sio.event
+        def pickup_result(data):
+            puid = data.get("puid") or data.get("itemId")
+            if not puid:
+                return
+
+            pick_item = GameWorldManager.get_pick_item(puid)
+            if data.get("success"):
+                if puid in self._confirmed_pickups:
+                    return
+                if pick_item:
+                    if pick_item.complete_pickup():
+                        self._confirmed_pickups.add(puid)
+                        GameToastManager.add_message(data.get("message", "拾取成功"))
+                elif self._add_pickup_payload_to_bag(data.get("itemData", {})):
+                    self._confirmed_pickups.add(puid)
+                    GameToastManager.add_message(data.get("message", "拾取成功"))
+            else:
+                if pick_item:
+                    pick_item.cancel_pickup()
+                GameToastManager.add_message(data.get("message", "手慢了，道具已被抢走"))
+
+        @self.sio.event
+        def item_removed(data):
+            puid = data.get("puid") or data.get("itemId")
+            if puid:
+                GameWorldManager.remove_pick_item(puid)
 
         # @self.sio.event
         # def player_moved(data):
@@ -259,6 +328,57 @@ class GameWorldServer(SpriteBase):
                     return
                 self.players[player_id]['position'] = [x, y]
 
+        @self.sio.event
+        def player_moveto(data):
+            """服务端确认本地角色移动."""
+            player_id = data.get('playerId')
+            if player_id != self.player_id:
+                return
+
+            try:
+                x = int(data.get('x'))
+                y = int(data.get('y'))
+            except (TypeError, ValueError):
+                GameLogManager.log_service_error(f"服务端移动坐标异常: {data}")
+                return
+
+            player = self.gm.get("主角") if self.gm else None
+            if player is None:
+                return
+
+            try:
+                player.set_pos(x, y, notify_server=False)
+            except TypeError:
+                player.set_pos(x, y)
+            self.player_sprite["position"] = [x, y]
+            if self.player_id in self.players:
+                self.players[self.player_id]['position'] = [x, y]
+
+        @self.sio.event
+        def player_moveto_notice(data):
+            """服务端广播其他玩家的强制移动."""
+            player_id = data.get('playerId')
+            if not player_id or player_id == self.player_id:
+                return
+
+            try:
+                x = int(data.get('x'))
+                y = int(data.get('y'))
+                direction = int(data.get('direction', 0))
+            except (TypeError, ValueError):
+                GameLogManager.log_service_error(f"远程移动坐标异常: {data}")
+                return
+
+            remote = self.remote_player.get(player_id)
+            if remote:
+                remote.set_network_pos(x, y)
+                anim_name = f"stand_{direction}"
+                if remote.animator and not remote.animator.is_playing(anim_name):
+                    remote.animator.play(anim_name)
+
+            if player_id in self.players:
+                self.players[player_id]['position'] = [x, y]
+
         # @self.sio.event
         # def player_updated(data):
         #     """玩家属性更新"""
@@ -281,6 +401,7 @@ class GameWorldServer(SpriteBase):
             player_name = self.players.get(player_id, {}).get('name', '未知玩家')
             chat_text = f"{player_name}: {message}"
             item_links = data.get("itemLinks") or data.get("item_links") or []
+            channel = data.get("channel", "世界")
 
             self.chat_messages.append(chat_text)
             if len(self.chat_messages) > 10:
@@ -288,11 +409,14 @@ class GameWorldServer(SpriteBase):
 
             if self.on_chat_message:
                 try:
-                    self.on_chat_message(player_id, player_name, message, item_links)
+                    self.on_chat_message(player_id, player_name, message, channel, item_links)
                 except TypeError:
-                    self.on_chat_message(player_id, player_name, message)
+                    try:
+                        self.on_chat_message(player_id, player_name, message, item_links)
+                    except TypeError:
+                        self.on_chat_message(player_id, player_name, message)
             elif getattr(self.gm, "chat_system", None):
-                self.gm.chat_system.receive_network_message(player_name, message, item_links=item_links)
+                self.gm.chat_system.receive_network_message(player_name, message, channel=channel, item_links=item_links)
 
     def _serialize_sprite_data(self, sprite: SpriteBase) -> Dict[str, Any]:
         """序列化精灵数据 - 只使用 user 的属性"""
@@ -300,7 +424,7 @@ class GameWorldServer(SpriteBase):
             # 基本属性
             'UID': sprite.UID,
             'name': sprite.name,
-            'position': sprite.position,  # 世界坐标
+            'position': [sprite.transform.x, sprite.transform.y],  # 世界坐标
 
             # 核心属性
             'healthy': sprite.healthy,
@@ -456,8 +580,8 @@ class GameWorldServer(SpriteBase):
                 start_time = time.time()
                 self.send_msg('player_move', {
                     'roomId': self.room_id,
-                    'x': self.sprite.position[0], # 当前位置
-                    'y': self.sprite.position[1],
+                    'x': self.sprite.transform.x, # 当前位置
+                    'y': self.sprite.transform.y,
                     "direction": self.sprite.direction,
                     "sta": self.sprite.sprite_state.value,
                     "current_path": self.sprite.current_path # 寻路的路径
@@ -474,6 +598,21 @@ class GameWorldServer(SpriteBase):
             except Exception as e:
                 GameLogManager.log_service_error(f"发送移动消息失败: {e}")
 
+    def send_moveto(self, x: int, y: int):
+        """请求服务端控制本地角色移动到指定坐标."""
+        if not self.connected or not self.room_id:
+            GameToastManager.add_message("已断开连接")
+            return
+        try:
+            self.send_msg('player_moveto', {
+                'roomId': self.room_id,
+                'x': int(x),
+                'y': int(y),
+                'direction': self.sprite.direction if self.sprite else 0,
+            })
+        except Exception as e:
+            GameLogManager.log_service_error(f"发送服务端移动请求失败: {e}")
+
     # def send_player_update(self):
     #     """发送玩家属性更新"""
     #     if self.connected and self.room_id and self.player_sprite:
@@ -482,12 +621,13 @@ class GameWorldServer(SpriteBase):
     #             'attributes': self.player_sprite
     #         })
 
-    def send_chat(self, message: str, item_links: list[dict] | None = None):
+    def send_chat(self, message: str, channel: str = "一般", item_links: list[dict] | None = None):
         """发送聊天消息"""
         if self.connected and self.room_id and message.strip():
             payload = {
                 'roomId': self.room_id,
-                'message': message.strip()
+                'message': message.strip(),
+                'channel': channel,
             }
             if item_links:
                 payload["itemLinks"] = self.__serialize_chat_item_links(item_links)
@@ -649,6 +789,13 @@ class RemotePlayerSprite(SpriteBase):
     def update_from_network(self, sprite_data: Dict[str, Any]):
         """从网络数据更新"""
         self._init_from_network_data(sprite_data)
+
+    def set_network_pos(self, x: int, y: int):
+        """服务端确认的远程角色落点."""
+        self.position = [x, y]
+        self.__pos = [x, y]
+        self.current_path = []
+        self.current_path_index = 0
 
     def load_animations(self):
         """一次性加载NPC的站立和移动动画（不做偏移量计算）"""

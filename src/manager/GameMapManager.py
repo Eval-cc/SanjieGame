@@ -132,6 +132,109 @@ class GameMapManager:
         return inside
 
     @classmethod
+    def is_passable_grid(cls, x: int, y: int) -> bool:
+        """判断地图格子是否可通行."""
+        if not cls.__passable:
+            return False
+        if y < 0 or y >= len(cls.__passable):
+            return False
+        if x < 0 or x >= len(cls.__passable[y]):
+            return False
+        return str(cls.__passable[y][x]) != "0"
+
+    @classmethod
+    def nearest_passable_grid(cls, x: int, y: int, max_radius: int = 8) -> tuple[int, int] | None:
+        """返回目标格或目标附近最近的可通行格."""
+        if cls.is_passable_grid(x, y):
+            return x, y
+
+        for radius in range(1, max_radius + 1):
+            candidates = []
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    if max(abs(dx), abs(dy)) != radius:
+                        continue
+                    nx, ny = x + dx, y + dy
+                    if cls.is_passable_grid(nx, ny):
+                        candidates.append((nx, ny))
+            if candidates:
+                return min(candidates, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)
+        return None
+
+    @classmethod
+    def normalize_world_pos(cls, target_x: int, target_y: int, max_radius: int = 8) -> dict:
+        """按地图障碍数据修正世界坐标."""
+        from src.manager.GameManager import GameManager
+
+        box_size = GameManager.game_box_size
+        grid_x = int(target_x // box_size)
+        grid_y = int(target_y // box_size)
+        result = {
+            "world_x": int(target_x),
+            "world_y": int(target_y),
+            "grid_x": grid_x,
+            "grid_y": grid_y,
+            "adjusted": False,
+        }
+
+        if not cls.__passable:
+            return result
+
+        passable_grid = cls.nearest_passable_grid(grid_x, grid_y, max_radius)
+        if passable_grid is None:
+            raise ValueError(f"目标坐标附近没有可通行格子: {grid_x},{grid_y}")
+
+        passable_x, passable_y = passable_grid
+        if passable_x != grid_x or passable_y != grid_y:
+            result["world_x"] = passable_x * box_size
+            result["world_y"] = passable_y * box_size
+            result["grid_x"] = passable_x
+            result["grid_y"] = passable_y
+            result["adjusted"] = True
+        return result
+
+    @classmethod
+    def move_player_in_current_map(cls, target_x: int, target_y: int) -> dict:
+        """在当前地图移动主角, 不重新加载地图."""
+        from src.manager.GameManager import GameManager
+
+        player = GameManager.get("主角")
+        if player is None:
+            raise ValueError("当前没有可移动的角色")
+
+        result = cls.normalize_world_pos(target_x, target_y)
+        w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+        if w_server and getattr(w_server, "connected", False) and hasattr(w_server, "send_moveto"):
+            w_server.send_moveto(result["world_x"], result["world_y"])
+            result["mode"] = "network"
+            return result
+
+        try:
+            player.set_pos(result["world_x"], result["world_y"], notify_server=False)
+        except TypeError:
+            player.set_pos(result["world_x"], result["world_y"])
+        result["mode"] = "local"
+        return result
+
+    @classmethod
+    def move_player_to(cls, map_name: str | None, target_x: int = None, target_y: int = None) -> dict:
+        """移动主角到目标地图/坐标, 当前地图内不触发地图重载."""
+        if map_name is None or str(map_name) == str(cls.map_id):
+            if target_x is None or target_y is None:
+                return {"mode": "noop", "map_id": cls.map_id}
+            result = cls.move_player_in_current_map(target_x, target_y)
+            result["map_id"] = cls.map_id
+            return result
+
+        cls.change_map(map_name, target_x, target_y)
+        return {
+            "mode": "map_changed",
+            "map_id": map_name,
+            "world_x": target_x,
+            "world_y": target_y,
+        }
+
+    @classmethod
     def generate_spawn_points(cls, config: dict):
         """基于三角剖分的多边形刷怪点生成"""
         spawn_areas = config.get("spawn_areas", [])

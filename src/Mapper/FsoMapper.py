@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from src.manager.GameLogManger import GameLogManager
 from src.manager.GameMapManager import GameMapManager
+from src.system.SkillSystem import SkillSystem
 
 if TYPE_CHECKING:
     from src.manager.GameManager import GameManager
@@ -42,15 +43,45 @@ class FsoMapper:
                   attack=?,
                   defense=?,
                   attack_speed=?,
-                  items=?
+                  items=?,
+                  level=?,
+                  curr_exp=?,
+                  upgrade_exp=?,
+                  skill_points=?,
+                  skill_levels=?
               WHERE id = ?;
               '''
 
         params = (
             GameMapManager.map_id, upos[0], upos[1], u_player.healthy, u_player.mana,
             u_player.attack, u_player.defense, u_player.attack_speed,
-            u_player.bag.get_full_save_data(), u_player.fso_id
+            u_player.bag.get_full_save_data(), getattr(u_player, "level", 1),
+            getattr(u_player, "curr_exp", 0), getattr(u_player, "upgrade_exp", 0),
+            getattr(u_player, "skill_points", 0), SkillSystem.serialize_actor_skill_levels(u_player),
+            u_player.fso_id
         )
 
         cls.gm.game_local_db.execute_non_query(sql, params)
         GameLogManager.log_service_debug("update fso data")
+
+    @classmethod
+    def save_skill_data(cls, u_player: "Player" = None):
+        if u_player is None:
+            u_player = cls.gm.get("主角")
+        if u_player is None:
+            return
+        sql = '''
+              UPDATE fso
+              SET curr_exp=?,
+                  skill_points=?,
+                  skill_levels=?
+              WHERE id = ?;
+              '''
+        params = (
+            getattr(u_player, "curr_exp", 0),
+            getattr(u_player, "skill_points", 0),
+            SkillSystem.serialize_actor_skill_levels(u_player),
+            u_player.fso_id
+        )
+        cls.gm.game_local_db.execute_non_query(sql, params)
+        GameLogManager.log_service_debug("update fso skill data")

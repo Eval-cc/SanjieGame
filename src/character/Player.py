@@ -156,9 +156,16 @@ class Player(SpriteBase):
                 "frames1": [60, 0, 30, 40]
             },
             {
+                "name": "强化",
+                "source": "exp_9-91483",
+                "loc": (62, 14),
+                "frames": [210, 0, 30, 40],
+                "frames1": [260, 0, 30, 40]
+            },
+            {
                 "name": "退出",
                 "source": "exp_9-91486",
-                "loc": (65, 10),
+                "loc": (88, 10),
                 "frames": [209, 0, 30, 40],
                 "frames1": [225, 0, 30, 40]
             }
@@ -264,18 +271,16 @@ class Player(SpriteBase):
             self.attack = data.get("attack")
             self.defense = data.get("defense")
             self.attack_speed = data.get("attack_speed")
+            self.level = self.__to_int(data.get("level"), 1)
+            self.curr_exp = self.__to_int(data.get("curr_exp"), 0)
+            self.upgrade_exp = self.__to_int(data.get("upgrade_exp"), 100)
+            self.skill_points = self.__to_int(
+                self.__pick_data(data, "skill_points", "skill_point", "sp"),
+                50
+            )
             # 给主角挂上背包
             self.bag = GameBag(GameManager)
-
-            # 这里可先不添加, 点击背包显示的时候再加
-            # if len(data.get("items", "")) > 0:
-            #     self.bag.refresh_bag(data.get("items"))
-            # _item_arr = [ii for ii in data.get("items", "").split("|") if ii]
-            # for __ii in _item_arr:
-            #     # 格式  page, x, y, id, 数量
-            #     _item = [int(i) for i in __ii.split(",")]
-            #     self.bag.add_item(str(_item[3]), _item[4], target_page=_item[0], target_x=_item[1],
-            #                       target_y=_item[2])
+            self.bag.refresh_bag(data.get("items", ""))
 
             self.name = data.get("name")
             self.current_path_index = 0  # 当前路径索引
@@ -324,6 +329,23 @@ class Player(SpriteBase):
             GameManager.logout()
             time.sleep(1)
             raise e
+
+    @staticmethod
+    def __to_int(value, default: int = 0) -> int:
+        try:
+            if value in (None, ""):
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    @staticmethod
+    def __pick_data(data: dict, *keys: str):
+        for key in keys:
+            value = data.get(key)
+            if value not in (None, ""):
+                return value
+        return None
 
     def __extract_frames_from_sprite(self):
         """从精灵表中提取指定帧并存储到类属性中"""
@@ -567,7 +589,7 @@ class Player(SpriteBase):
         if w_server:
             w_server.send_move()
 
-    def stop_moving(self):
+    def stop_moving(self, notify_server: bool = True):
         super().stop_moving()
         self.sprite_state = SpriteState.IDLE
         self.__auto_path_text = ""
@@ -578,7 +600,7 @@ class Player(SpriteBase):
         ]
         # 通知服务器. 我停止了
         w_server: "GameWorldServer" = GameManager.get_manager("w_server")
-        if w_server:
+        if notify_server and w_server:
             w_server.send_stop()
         self.update_blit_map = True
 
@@ -1322,7 +1344,7 @@ class Player(SpriteBase):
         """
         return tuple(self.scene_pos)
 
-    def set_pos(self, x: int, y: int):
+    def set_pos(self, x: int, y: int, notify_server: bool = True):
         """设置角色位置"""
         self.transform.set_pos(x, y)
         # 更新全局格子坐标
@@ -1330,7 +1352,7 @@ class Player(SpriteBase):
             int(self.transform.x // GameManager.game_box_size),
             int(self.transform.y // GameManager.game_box_size)
         ]
-        self.stop_moving()
+        self.stop_moving(notify_server=notify_server)
         self.update_blit_map = True
 
     def start_battle(self):
@@ -1347,6 +1369,8 @@ class Player(SpriteBase):
             a["show"] = False
         game_ui.close_surface_ui("角色背包")
         game_ui.close_surface_ui("角色属性")
+        if GameManager.forge_system:
+            GameManager.forge_system.close()
 
     def end_battle(self):
         game_ui: GameUI = GameManager.get("游戏UI")
@@ -1412,6 +1436,17 @@ class Player(SpriteBase):
                 # if not game_ui.get_surface_show("角色技能"):
                 #     self.skill_bg_gif = None
                 # return
+            case "强化":
+                if not game_ui.get_surface_show("角色背包"):
+                    w_server: "GameWorldServer" = GameManager.get_manager("w_server")
+                    if not w_server:
+                        items = GameManager.game_local_db.fetch_on("SELECT items from fso WHERE account_id = (SELECT ID FROM accounts WHERE username = ?)", (self.acc_name,))
+                        if items:
+                            self.bag.refresh_bag(items.get("items"))
+                    game_ui.change_ui_layer("角色背包")
+                if GameManager.forge_system:
+                    GameManager.forge_system.show()
+                return
             case _:
                 GameLogManager.log_service_error(f"无法识别的指令: {cbk_name}")
 
@@ -1495,6 +1530,8 @@ class Player(SpriteBase):
         if not success:
             return False
         self.__selected_skill = new_skill
+        self.update_blit = True
+        FsoMapper.save_skill_data(self)
         self.__refresh_skill_tree_ui()
         self.__show_skill_detail(new_skill)
         return False
