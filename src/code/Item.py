@@ -10,6 +10,7 @@
 @Describe: 
 """
 from uuid import uuid4
+import math
 import pygame
 
 from src.code.SpriteBase import SpriteBase
@@ -66,6 +67,8 @@ class Item(SpriteBase):
         '说明': {'attr': 'description', 'default': None, 'type': str},
         '主属性': {'attr': 'primary_attr_id', 'default': 0, 'type': int},
         '副属性': {'attr': 'secondary_attr_id', 'default': 0, 'type': int},
+        '主属性强度': {'attr': 'primary_attr_power', 'default': 85, 'type': int},
+        '副属性强度': {'attr': 'secondary_attr_power', 'default': 85, 'type': int},
         '过期时间': {'attr': 'expire_time', 'default': 0, 'type': int},
         '品质': {'attr': 'quality', 'default': 'white', 'type': str},
         '强化等级': {'attr': 'enhance_level', 'default': 0, 'type': int},
@@ -126,6 +129,8 @@ class Item(SpriteBase):
 
         self.primary_attr_id = -1  # 主属性 ID (基础攻击、防御等)   暂时应该用不到. 先留着
         self.secondary_attr_id = -1  # 副属性 ID (强化等级、词条等)
+        self.primary_attr_power = 85  # 主属性强度, 85 等于脚本原值, 255 约等于 3 倍
+        self.secondary_attr_power = 85  # 副属性强度, 85 等于脚本原值, 255 约等于 3 倍
         self.expire_time = -1  # 过期时间 (时间戳)
         self.quality = "white"  # 品质预留 white/green/blue/gold/purple
         self.related = 0  # 通用关联字段: 强化石装备类型/保护符成功率等
@@ -255,20 +260,23 @@ class Item(SpriteBase):
         # 1. 基础固有属性 (固定值)
         res = {
             "fixed": {
-                "伤害": self.damage, "防御": self.defense, "闪躲": self.dodge,
-                "命中": self.hit, "攻击速度": self.attack_speed, "必杀率": self.critical_rate,
-                "MaxHp": self.max_hp, "MaxMp": self.max_mp,
-                "抗火": self.fire_resistance, "抗水": self.water_resistance, "抗毒": self.poison_resistance
+                "伤害": self.__effective_base_attr("伤害", "damage"),
+                "防御": self.__effective_base_attr("防御", "defense"),
+                "闪躲": self.__effective_base_attr("闪躲", "dodge"),
+                "命中": self.__effective_base_attr("命中", "hit"),
+                "攻击速度": self.__effective_base_attr("攻击速度", "attack_speed"),
+                "必杀率": self.__effective_base_attr("必杀率", "critical_rate"),
+                "MaxHp": self.__effective_base_attr("MaxHp", "max_hp"),
+                "MaxMp": self.__effective_base_attr("MaxMp", "max_mp"),
             },
-            "points": {},  # 强度点数 (力量、体质等)
-            "ratio": {}  # 百分比加成 (伤害%, 生命% 等)
+            "points": {},  # 五维强度百分比增幅
+            "ratio": {}
         }
 
         pass_attr = ['ID', '可装备附魔', '可宠物附魔', '备注', '有效', '说明', '阶段', '道具类型', '品质', '附加价格']
-        percentage_keys = ['攻击速度', '伤害', '防御', '命中', '闪躲', '爆击率', 'hp', 'mp']
         point_keys = ['力量强度', '体质强度', '精准强度', '敏捷强度', '智力强度']
 
-        def collect_script_data(attr_id):
+        def collect_script_data(attr_id, attr_power):
             if attr_id <= 0: return
             script_data = SourceManager.get_csv("attribs", str(attr_id))
             if not script_data: return
@@ -278,23 +286,63 @@ class Item(SpriteBase):
                 try:
                     num_val = float(val)
                     if num_val == 0: continue
+                    num_val = self.__scale_script_value(num_val, attr_power)
+                    if num_val == 0:
+                        continue
 
-                    if key in percentage_keys:
-                        # 统一存入 ratio，除以 100 方便计算
-                        res["ratio"][key] = res["ratio"].get(key, 0.0) + (num_val / 100.0)
-                    elif key in point_keys:
+                    if key in point_keys:
                         res["points"][key] = res["points"].get(key, 0.0) + num_val
                     else:
                         res["fixed"][key] = res["fixed"].get(key, 0) + int(num_val)
                 except:
                     continue
 
-        collect_script_data(self.primary_attr_id)
-        collect_script_data(self.secondary_attr_id)
+        if self.has_affix_attrs():
+            collect_script_data(self.primary_attr_id, self.primary_attr_power)
+            collect_script_data(self.secondary_attr_id, self.secondary_attr_power)
         for attr_name, attr_val in self.get_enhance_fixed_attrs().items():
             res["fixed"][attr_name] = res["fixed"].get(attr_name, 0) + attr_val
 
         return res
+
+    def has_affix_attrs(self) -> bool:
+        if int(getattr(self, "type", 0) or 0) != 1:
+            return False
+        if str(getattr(self, "quality", "white") or "white").lower() == "white":
+            return False
+        return int(getattr(self, "primary_attr_id", 0) or 0) > 0 or int(getattr(self, "secondary_attr_id", 0) or 0) > 0
+
+    def __quality_multiplier(self) -> float:
+        return {
+            "white": 1.0,
+            "green": 1.15,
+            "blue": 1.35,
+            "purple": 1.65,
+            "gold": 1.9,
+        }.get(str(getattr(self, "quality", "white") or "white").lower(), 1.0)
+
+    def __effective_base_attr(self, config_key: str, attr_name: str) -> int:
+        base_val = int(getattr(self, attr_name, 0) or 0)
+        if base_val <= 0:
+            return 0
+        if int(getattr(self, "type", 0) or 0) != 1:
+            return base_val
+        return max(1, int(base_val * self.__quality_multiplier()))
+
+    @staticmethod
+    def __normalize_attr_power(value, default: int = 85) -> int:
+        try:
+            power = int(value)
+        except (TypeError, ValueError):
+            power = default
+        return max(0, min(255, power))
+
+    def __scale_script_value(self, value: float, attr_power: int) -> int:
+        power = self.__normalize_attr_power(attr_power)
+        if power <= 0:
+            return 0
+        scaled = value * (power / 85.0)
+        return math.floor(scaled)
 
     def get_enhance_fixed_attrs(self, level: int = None) -> dict:
         """根据强化等级生成额外固定属性。这里只做公式入口, 后续可以改成读表。"""
@@ -312,13 +360,10 @@ class Item(SpriteBase):
             ("必杀率", "critical_rate"),
             ("MaxHp", "max_hp"),
             ("MaxMp", "max_mp"),
-            ("抗火", "fire_resistance"),
-            ("抗水", "water_resistance"),
-            ("抗毒", "poison_resistance"),
         ]
         ratio = 0.06 * target_level
         for show_name, attr_name in enhance_fields:
-            base_val = int(getattr(self, attr_name, 0) or 0)
+            base_val = self.__effective_base_attr(show_name, attr_name)
             if base_val <= 0:
                 continue
             bonus_attrs[show_name] = max(1, int(base_val * ratio))
@@ -340,7 +385,7 @@ class Item(SpriteBase):
         # 我们只列出 FIELD_MAPPING 中属于数值加成的部分
         combat_fields = [
             '命中', '伤害', '防御', '闪躲', '攻击速度', '必杀率',
-            'MaxHp', 'MaxMp', '抗火', '抗水', '抗毒'
+            'MaxHp', 'MaxMp'
         ]
 
         enhance_attrs = self.get_enhance_fixed_attrs()
@@ -350,7 +395,7 @@ class Item(SpriteBase):
                 continue
 
             attr_name = mapping.get("attr")
-            val = getattr(self, attr_name, 0)
+            val = self.__effective_base_attr(config_key, attr_name)
 
             # 只有数值大于 0 才显示基础加成
             if isinstance(val, (int, float)) and val > 0:
@@ -361,10 +406,9 @@ class Item(SpriteBase):
         # 2. 脚本额外增益属性 (绿色)
         # 过滤掉非战斗增益的字段
         pass_attr = ['ID', '可装备附魔', '可宠物附魔', '备注', '有效', '说明', '阶段', '道具类型', '品质', '附加价格']
-        # 需要显示为百分比的字段
-        percentage_attr = ['攻击速度', '伤害', '防御', '命中', '闪躲', '爆击率', '杀怪经验获得率', '杀怪金钱获得率']
+        strength_attr = ['力量强度', '体质强度', '精准强度', '敏捷强度', '智力强度']
 
-        def collect_script_attrs(attr_id):
+        def collect_script_attrs(attr_id, attr_power):
             if not attr_id or attr_id <= 0:
                 return
             # 这里 SourceManager 内部会处理 get，我们直接拿数据
@@ -377,20 +421,20 @@ class Item(SpriteBase):
                 if ak in pass_attr or not val:
                     continue
                 try:
-                    num_val = int(float(val))
+                    num_val = self.__scale_script_value(float(val), attr_power)
                     if num_val <= 0:
                         continue
 
-                    # 格式化数值：百分比 or 纯数字
-                    display_val = f"{num_val}%" if ak in percentage_attr else f"{num_val}"
+                    display_val = f"{int(num_val)}%" if ak in strength_attr else f"{int(num_val)}"
                     # display_results.append((f"{ak}: +{display_val}", "#00E500"))
                     display_results.append((f"{ak}: +{display_val}", "#FF0000"))
                 except (ValueError, TypeError):
                     continue
 
-        # 按顺序采集主、副属性脚本中的增益
-        collect_script_attrs(self.primary_attr_id)
-        collect_script_attrs(self.secondary_attr_id)
+        # 白色品质不允许生成词条, 即使存档或GM命令带了词条ID也不显示、不生效。
+        if self.has_affix_attrs():
+            collect_script_attrs(self.primary_attr_id, self.primary_attr_power)
+            collect_script_attrs(self.secondary_attr_id, self.secondary_attr_power)
 
         return display_results
 

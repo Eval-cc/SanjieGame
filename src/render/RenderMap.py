@@ -164,6 +164,47 @@ class RenderMap(SpriteBase):
                                                                 render_y, 300,
                                                                 100,
                                                                 baking=True, mask_color='#BEBE00')
+        self.__render_dungeon_fog()
+
+    def __render_dungeon_fog(self):
+        from src.manager.DungeonManager import DungeonManager
+        player = GameManager.get("主角")
+        if player is None or not DungeonManager.fog_enabled():
+            return
+
+        view_width = GameManager.game_win_rect.width
+        view_height = GameManager.game_win_rect.height
+        box_size = GameManager.game_box_size
+        camera_pos = GameManager.game_camera.get_position()
+
+        DungeonManager.update_explored(player)
+        fog_surface = pygame.Surface((view_width, view_height), pygame.SRCALPHA)
+        fog_surface.fill((0, 0, 0, 215))
+
+        start_x = max(0, int(camera_pos.x // box_size) - 1)
+        start_y = max(0, int(camera_pos.y // box_size) - 1)
+        end_x = int((camera_pos.x + view_width) // box_size) + 2
+        end_y = int((camera_pos.y + view_height) // box_size) + 2
+        for gy in range(start_y, end_y):
+            for gx in range(start_x, end_x):
+                if not DungeonManager.is_cell_explored(gx, gy):
+                    continue
+                rect = pygame.Rect(
+                    gx * box_size - camera_pos.x,
+                    gy * box_size - camera_pos.y,
+                    box_size,
+                    box_size,
+                )
+                pygame.draw.rect(fog_surface, (0, 0, 0, 0), rect)
+
+        px = int(player.transform.x - camera_pos.x)
+        py = int(player.transform.y - camera_pos.y)
+        pygame.draw.circle(fog_surface, (0, 0, 0, 0), (px, py), box_size * 7)
+        for radius in range(box_size * 7, box_size * 10, box_size):
+            alpha = int(215 * (radius - box_size * 7) / max(1, box_size * 3))
+            pygame.draw.circle(fog_surface, (0, 0, 0, alpha), (px, py), radius, box_size)
+
+        GameManager.game_win.blit(fog_surface, (0, 0))
 
     def mouse_down(self, event: Dict[str, pygame.event.EventType] | pygame.event.EventType):
         super().mouse_down(event)

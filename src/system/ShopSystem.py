@@ -322,6 +322,8 @@ class ShopSystem:
             new_item.enhance_level = item.enhance_level
             new_item.primary_attr_id = item.primary_attr_id
             new_item.secondary_attr_id = item.secondary_attr_id
+            new_item.primary_attr_power = getattr(item, "primary_attr_power", 85)
+            new_item.secondary_attr_power = getattr(item, "secondary_attr_power", 85)
             new_item.expire_time = item.expire_time
 
         self.items.append(new_item)

@@ -124,6 +124,8 @@ class Player(SpriteBase):
         self.base_defense = self.defense
         self.base_attack_speed = self.attack_speed
         self.base_miss = self.miss
+        self.base_hit = self.hit
+        self.base_critical_rate = self.critical_rate
         self.base_strength = self.strength
         self.base_constitution = self.constitution
         self.base_intelligence = self.intelligence
@@ -268,9 +270,18 @@ class Player(SpriteBase):
             self.healthy = data.get("healthy")
             self.max_healthy = data.get("healthy")
             self.mana = data.get("mana")
+            self.max_mana = self.__to_int(data.get("max_mana"), self.__to_int(self.mana, 0))
             self.attack = data.get("attack")
             self.defense = data.get("defense")
             self.attack_speed = data.get("attack_speed")
+            self.miss = self.__to_int(self.__pick_data(data, "miss", "闪躲", "闪避"), self.__to_int(getattr(self, "miss", 0), 0))
+            self.hit = self.__to_int(self.__pick_data(data, "hit", "命中"), 0)
+            self.critical_rate = self.__to_int(self.__pick_data(data, "critical_rate", "必杀率", "爆击率", "暴击率"), 0)
+            self.strength = self.__to_int(self.__pick_data(data, "strength", "力量"), 100)
+            self.constitution = self.__to_int(self.__pick_data(data, "constitution", "体质"), 100)
+            self.intelligence = self.__to_int(self.__pick_data(data, "intelligence", "智力"), 100)
+            self.agile = self.__to_int(self.__pick_data(data, "agile", "敏捷"), 100)
+            self.endurance = self.__to_int(self.__pick_data(data, "endurance", "精准", "耐力"), 100)
             self.level = self.__to_int(data.get("level"), 1)
             self.curr_exp = self.__to_int(data.get("curr_exp"), 0)
             self.upgrade_exp = self.__to_int(data.get("upgrade_exp"), 100)
@@ -1030,12 +1041,14 @@ class Player(SpriteBase):
         return targets
 
     def __create_medium_map_view(self, size: tuple[int, int]):
+        from src.manager.DungeonManager import DungeonManager
         cache_key = (
             GameMapManager.map_id,
             tuple(GameManager.game_map_size or []),
             tuple(GameMapManager.game_map_column_row_size()),
             tuple(GameMapManager.game_map_tile_size()),
-            size
+            size,
+            DungeonManager.explored_version()
         )
         if self.__medium_map_cache_key == cache_key and self.__medium_map_cache_surface is not None:
             return self.__medium_map_cache_surface.copy()
@@ -1068,6 +1081,7 @@ class Player(SpriteBase):
         overlay = pygame.Surface((view_w, view_h), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 42))
         view.blit(overlay, (0, 0))
+        self.__apply_dungeon_fog_to_map_view(view, pygame.Rect(0, 0, view_w, view_h), (0, 0, world_w, world_h))
         self.__medium_map_cache_key = cache_key
         self.__medium_map_cache_surface = view.copy()
         return view
@@ -1209,7 +1223,38 @@ class Player(SpriteBase):
         overlay = pygame.Surface((view_w, view_h), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 54))
         view.blit(overlay, (0, 0))
+        self.__apply_dungeon_fog_to_map_view(view, pygame.Rect(0, 0, view_w, view_h), (left, top, range_w, range_h))
         return view
+
+    def __apply_dungeon_fog_to_map_view(self, view: pygame.Surface, view_rect: pygame.Rect, world_rect):
+        from src.manager.DungeonManager import DungeonManager
+        if not DungeonManager.fog_enabled():
+            return
+        left, top, range_w, range_h = world_rect
+        if range_w <= 0 or range_h <= 0:
+            return
+
+        box_size = GameManager.game_box_size
+        fog = pygame.Surface(view_rect.size, pygame.SRCALPHA)
+        fog.fill((0, 0, 0, 210))
+        start_gx = max(0, int(left // box_size) - 1)
+        start_gy = max(0, int(top // box_size) - 1)
+        end_gx = int((left + range_w) // box_size) + 2
+        end_gy = int((top + range_h) // box_size) + 2
+        for gy in range(start_gy, end_gy):
+            for gx in range(start_gx, end_gx):
+                if not DungeonManager.is_cell_explored(gx, gy):
+                    continue
+                cell_left = gx * box_size
+                cell_top = gy * box_size
+                rect = pygame.Rect(
+                    int((cell_left - left) * view_rect.width / range_w),
+                    int((cell_top - top) * view_rect.height / range_h),
+                    max(1, math.ceil(box_size * view_rect.width / range_w)),
+                    max(1, math.ceil(box_size * view_rect.height / range_h)),
+                )
+                pygame.draw.rect(fog, (0, 0, 0, 0), rect)
+        view.blit(fog, view_rect.topleft)
 
     def __draw_minimap_points(self, sur: pygame.Surface, view_rect: pygame.Rect):
         """绘制玩家、NPC和怪物点位."""
@@ -1653,55 +1698,70 @@ class Player(SpriteBase):
             for k, v in attr_pack.get("points", {}).items():
                 total_points[k] = total_points.get(k, 0) + v
 
-        # --- A. 更新面板五围属性 (STATUS_POS 中对应的强度值) ---
-        # 最终力量 = 裸体力量 + 装备提供的力量强度点数
-        self.strength = self.base_strength + int(total_points.get("力量强度", 0))
-        self.constitution = self.base_constitution + int(total_points.get("体质强度", 0))
-        self.intelligence = self.base_intelligence + int(total_points.get("智力强度", 0))
-        self.agile = self.base_agile + int(total_points.get("敏捷强度", 0))
-        self.endurance = self.base_endurance + int(total_points.get("精准强度", 0))
+        def fixed_sum(*keys: str) -> float:
+            return sum(float(total_fixed.get(key, 0) or 0) for key in keys)
 
-        # --- B. 计算二级属性转换 (强度 -> 固定值追加) ---
-        # 力量强度 -> 伤害 (2:1)
-        total_fixed["伤害"] = total_fixed.get("伤害", 0) + (int(total_points.get("力量强度", 0)) // 2)
-        # 体质强度 -> HP (2:3)
-        total_fixed["MaxHp"] = total_fixed.get("MaxHp", 0) + (int(total_points.get("体质强度", 0) * 3) // 2)
-        # 智力强度 -> MP (2:1)
-        total_fixed["MaxMp"] = total_fixed.get("MaxMp", 0) + (int(total_points.get("智力强度", 0)) // 2)
-        # 敏捷强度 -> 闪躲 (3:1)
-        total_fixed["闪躲"] = total_fixed.get("闪躲", 0) + (int(total_points.get("敏捷强度", 0)) // 3)
+        def ratio_sum(*keys: str) -> float:
+            return sum(float(total_ratio.get(key, 0.0) or 0.0) for key in keys)
+
+        def calc_scaled(base_value, fixed_keys: tuple[str, ...], ratio_keys: tuple[str, ...] = None,
+                        minimum: int = 0) -> int:
+            base_value = float(base_value or 0)
+            ratio_keys = fixed_keys if ratio_keys is None else ratio_keys
+            value = base_value + fixed_sum(*fixed_keys) + (base_value * ratio_sum(*ratio_keys))
+            return max(minimum, int(math.floor(value)))
+
+        def calc_points(base_value, keys: tuple[str, ...], minimum: int = 0) -> int:
+            value = float(base_value or 0) + fixed_sum(*keys) + (ratio_sum(*keys) * 100)
+            return max(minimum, int(math.floor(value)))
+
+        def calc_base_attr(base_value, key: str) -> int:
+            base_value = float(base_value or 0)
+            bonus_ratio = float(total_points.get(key, 0) or 0) / 100.0
+            return int(math.floor(base_value * (1.0 + bonus_ratio)))
+
+        # --- A. 更新面板五围属性 (STATUS_POS 中对应的强度值) ---
+        # 五维强度是基础属性百分比增幅, 例如力量强度 10 表示基础力量 * 1.10。
+        self.strength = calc_base_attr(self.base_strength, "力量强度")
+        self.constitution = calc_base_attr(self.base_constitution, "体质强度")
+        self.intelligence = calc_base_attr(self.base_intelligence, "智力强度")
+        self.agile = calc_base_attr(self.base_agile, "敏捷强度")
+        self.endurance = calc_base_attr(self.base_endurance, "精准强度")
+
+        # --- B. 计算二级属性转换 (五维增量 -> 固定战斗属性) ---
+        strength_bonus = max(0, self.strength - self.base_strength)
+        constitution_bonus = max(0, self.constitution - self.base_constitution)
+        intelligence_bonus = max(0, self.intelligence - self.base_intelligence)
+        agile_bonus = max(0, self.agile - self.base_agile)
+        endurance_bonus = max(0, self.endurance - self.base_endurance)
+        total_fixed["伤害"] = total_fixed.get("伤害", 0) + (strength_bonus // 2)
+        total_fixed["MaxHp"] = total_fixed.get("MaxHp", 0) + ((constitution_bonus * 3) // 2)
+        total_fixed["MaxMp"] = total_fixed.get("MaxMp", 0) + (intelligence_bonus // 2)
+        total_fixed["闪躲"] = total_fixed.get("闪躲", 0) + (agile_bonus // 3)
+        total_fixed["命中"] = total_fixed.get("命中", 0) + (endurance_bonus // 3)
 
         # --- C. 执行最终公式计算 (所有结果向下取整) ---
         # 计算攻击力 (Attack)
-        self.attack = int(math.floor(
-            self.base_attack + total_fixed.get("伤害", 0) + (self.base_attack * total_ratio.get("伤害", 0.0))
-        ))
+        self.attack = calc_scaled(self.base_attack, ("伤害",))
 
         # 计算最大生命 (Max HP)
-        self.max_healthy = int(math.floor(
-            self.base_max_hp + total_fixed.get("MaxHp", 0) + (self.base_max_hp * total_ratio.get("hp", 0.0))
-        ))
+        self.max_healthy = calc_scaled(self.base_max_hp, ("MaxHp", "hp"), ("hp",))
 
         # 计算最大魔法 (Max MP)
-        self.mana = int(math.floor(
-            self.base_base_mp + total_fixed.get("MaxMp", 0) + (self.base_base_mp * total_ratio.get("mp", 0.0))
-        ))
+        self.mana = calc_scaled(self.base_base_mp, ("MaxMp", "mp"), ("mp",))
+        self.max_mana = self.mana
 
         # 计算防御 (Defense)
-        self.defense = int(math.floor(
-            self.base_defense + total_fixed.get("防御", 0) + (self.base_defense * total_ratio.get("防御", 0.0))
-        ))
+        self.defense = calc_scaled(self.base_defense, ("防御",))
 
         # 计算闪躲 (Miss/Dodge)
-        self.miss = int(math.floor(
-            self.base_miss + total_fixed.get("闪躲", 0) + (self.base_miss * total_ratio.get("闪躲", 0.0))
-        ))
+        self.miss = calc_scaled(self.base_miss, ("闪躲",))
 
         # 计算速度 (Attack Speed)
-        self.attack_speed = int(math.floor(
-            self.base_attack_speed + total_fixed.get("攻击速度", 0) + (
-                        self.base_attack_speed * total_ratio.get("攻击速度", 0.0))
-        ))
+        self.attack_speed = calc_scaled(self.base_attack_speed, ("攻击速度",))
+
+        self.hit = calc_scaled(self.base_hit, ("命中",))
+        self.critical_rate = calc_points(self.base_critical_rate, ("必杀", "必杀率", "爆击率", "暴击率"))
 
         # --- D. 状态修正与通知 ---
         # 如果上限变小了，当前值不能超过上限

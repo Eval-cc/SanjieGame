@@ -302,26 +302,32 @@ class GameMapManager:
         :return:
         """
         from src.manager.GameManager import GameManager
+        from src.manager.DungeonManager import DungeonManager
 
         cls.clear_map_npc()  # 把之前的NPC给移除掉
+        DungeonManager.clear_current_map_spawns()
         cls.map_id = map_name
         cls.scene_name = str(map_name)
         GameManager.game_camera.unmounted()  # 卸载相机挂载
+        is_dungeon_map = DungeonManager.is_in_dungeon() and str(map_name) == str(
+            DungeonManager.active_instance.template.map_id
+        )
 
         map_cfg_path = fr"{SourceManager.cfg_map_path}/map/{map_name}.json"
         if os.path.exists(map_cfg_path):
             """读取地图的配置表"""
             with open(map_cfg_path, "r", encoding="utf8") as f:
                 map_cfg = json.load(f)
-                npc_list = map_cfg.get("npc", [])
-                for nd in npc_list:
-                    nid = nd.get("id")
-                    position = nd.get("position")
-                    _npc = GameMapManager.add_npc(nid, position[0], position[1], 0)
-                    if nd.get("task"):
-                        _npc.default_dialog = nd.get("task")
-                # 生成刷怪区域
-                GameMapManager.generate_spawn_points(map_cfg)
+                if not is_dungeon_map:
+                    npc_list = map_cfg.get("npc", [])
+                    for nd in npc_list:
+                        nid = nd.get("id")
+                        position = nd.get("position")
+                        _npc = GameMapManager.add_npc(nid, position[0], position[1], 0)
+                        if nd.get("task"):
+                            _npc.default_dialog = nd.get("task")
+                    # 生成刷怪区域
+                    GameMapManager.generate_spawn_points(map_cfg)
 
                 w, h, column, row, frame_w, frame_h = [map_cfg.get("map_width", None), map_cfg.get("map_height", None),
                                                        map_cfg.get("map_tile_column", None),
@@ -349,6 +355,8 @@ class GameMapManager:
                 if map_cfg.get("environment"):
                     weather_type = map_cfg.get("environment").get("weather")
                     GameManager.weather_sys.setWeather(weather_type)
+                elif GameManager.weather_sys:
+                    GameManager.weather_sys.clear()
 
         else:
             GameLogManager.log_service_error(f"未找到当前地图[{map_name}]的json配置文件")
@@ -435,6 +443,9 @@ class GameMapManager:
                 u_player.update_blit_map = True
         else:
             GameDialogBoxManager.dialog("无法执行相机挂载. 未找到角色信息")
+
+        if is_dungeon_map:
+            DungeonManager.populate_current_map()
 
     @classmethod
     def game_map_passable(cls) -> list:
@@ -542,10 +553,13 @@ class GameMapManager:
     def remove_map_npc(cls, uid: str):
         """移除指定uid的NPC"""
         from src.manager.GameManager import GameManager
+        from src.manager.DungeonManager import DungeonManager
         GameManager.remove(uid)
 
         npc: "NpcSprite" = cls.__map_npc_dict.get(uid)
         if npc:
+            DungeonManager.on_map_npc_removed(npc)
             npc.destroy()
             del cls.__map_npc_dict[uid]
-        cls.CURR_BATTLE_NPC_UID.remove(uid)
+        if uid in cls.CURR_BATTLE_NPC_UID:
+            cls.CURR_BATTLE_NPC_UID.remove(uid)

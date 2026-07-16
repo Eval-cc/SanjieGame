@@ -22,6 +22,7 @@ from src.manager.GameManager import GameManager
 from src.manager.GameEvent import GameEvent
 from src.manager.GameFont import GameFont
 from src.system.ShopSystem import ShopSystem
+from src.system.TaskSystem import TaskTracker
 
 
 class GameWin:
@@ -46,6 +47,7 @@ class GameWin:
         # 初始化字体管理类
         GameFont.load(GameManager.game_win)
         GameManager.add("游戏UI", GameUI(GameManager))
+        GameManager.add("任务追踪", TaskTracker(GameManager))
         GameManager.add("登录页面", GameLogin(GameManager))
 
         if sys.argv and len(sys.argv) > 1:

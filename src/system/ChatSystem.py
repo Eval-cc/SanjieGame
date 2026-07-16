@@ -8,6 +8,7 @@
 
 import html
 import os
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from uuid import uuid4
 
 import pygame
 
+from src.code.SpriteBase import SpriteBase
+from src.manager.GameFont import GameFont
 from src.manager.GameLogManger import GameLogManager
 from src.manager.SourceManager import SourceManager
 from src.system.GameDialog import GameDialog
@@ -34,13 +37,71 @@ class ChatMessage:
     item_links: list[dict] = field(default_factory=list)
 
 
+class _ChatTextOverlay(SpriteBase):
+    """左下角聊天文本预览, 不接管鼠标键盘事件."""
+
+    def __init__(self, gm: "GameManager", chat_system: "ChatSystem"):
+        super().__init__()
+        self.gm = gm
+        self.chat_system = chat_system
+        self.layer_order = 860
+        self.active_click = False
+        self.max_lines = 5
+        self.font_size = 13
+        self.line_height = 18
+        self.left = 12
+        self.bottom_gap = 78
+
+    def render_sticky(self):
+        if self.gm.game_win is None or self.gm.game_win_rect is None:
+            return
+        if self.chat_system.dialog.visible():
+            return
+        if not self.chat_system.messages:
+            return
+
+        lines = self.__visible_lines()
+        if not lines:
+            return
+
+        max_width = min(520, max(260, self.gm.game_win_rect.width - 40))
+        y = max(8, self.gm.game_win_rect.height - self.bottom_gap - len(lines) * self.line_height)
+        for text, color in lines:
+            text = self.__ellipsis(text, max_width)
+            shadow = GameFont.get_text_surface_line(text, True, self.font_size, "#000000", bolder=True)
+            surface = GameFont.get_text_surface_line(text, True, self.font_size, color)
+            self.gm.game_win.blit(shadow, (self.left - 1, y - 1))
+            self.gm.game_win.blit(surface, (self.left, y))
+            y += self.line_height
+
+    def __visible_lines(self):
+        result = []
+        for msg in self.chat_system.messages[-self.max_lines:]:
+            result.append((self.chat_system.plain_message_text(msg), msg.color))
+        return result
+
+    def __ellipsis(self, text: str, max_width: int):
+        text = str(text or "")
+        max_chars = max(12, int(max_width / 7))
+        if len(text) <= max_chars:
+            return text
+        return f"{text[:max_chars - 3]}..."
+
+
 class ChatSystem:
     dialog_key = "游戏聊天框"
     input_id = "chat_input"
     max_messages = 80
     visible_messages = 4
+    max_item_links_per_message = 5
+    chat_line_width = 318
 
     quality_names = {"white", "green", "blue", "gold", "purple"}
+    unimplemented_commands = {
+        "see", "hide", "show", "startwarfield", "startcardtrade", "stopcardtrade", "createnpc",
+        "mlev", "levelup", "setlev", "moveuser", "kick", "info", "ban", "unban", "set",
+        "feodchangeunion",
+    }
 
     channel_colors = {
         "系统": "#FFE08A",
@@ -53,11 +114,11 @@ class ChatSystem:
     }
     channel_order = ["一般", "队伍", "诸侯", "世界", "系统"]
     channel_labels = {
-        "一般": "一般频道",
-        "队伍": "队伍频道",
-        "诸侯": "诸侯频道",
-        "世界": "世界频道",
-        "系统": "系统频道",
+        "一般": "一般",
+        "队伍": "队伍",
+        "诸侯": "诸侯",
+        "世界": "世界",
+        "系统": "系统",
     }
     face_token_pattern = re.compile(r"\[微笑([1-9]\d?)\]|\[f([1-9]\d?)\]")
     face_cols = 13
@@ -87,6 +148,10 @@ class ChatSystem:
         self.generated_path = os.path.join(SourceManager.cfg_task_path, "__game_chat_generated.html")
         self.face_panel_path = os.path.join(SourceManager.cfg_task_path, "__chat_face_panel_generated.html")
         self.item_detail_path = os.path.join(SourceManager.cfg_task_path, "__chat_item_detail_generated.html")
+        self.overlay_key = "聊天文本"
+        if self.gm.get(self.overlay_key) is not None:
+            self.gm.remove(self.overlay_key)
+        self.gm.add(self.overlay_key, _ChatTextOverlay(gm, self))
 
     def show(self):
         if not os.path.exists(self.template_path):
@@ -95,14 +160,28 @@ class ChatSystem:
             return
 
         if not self.messages:
-            _msg = ["抵制不良游戏，拒绝盗版游戏。","注意自我保护，谨防受骗上当。","适度游戏益脑，沉迷游戏伤身。","合理安排时间，享受健康生活。"]
+            _msg = ["抵制不良游戏，拒绝盗版游戏。", "注意自我保护，谨防受骗上当。", "适度游戏益脑，沉迷游戏伤身。", "合理安排时间，享受健康生活。"]
             for m in _msg:
-                self.add_message( "系统","", m, render=False)
+                self.add_message("系统", "", m, render=False)
+
+    def open_input(self):
+        self.show()
         self.render()
+        self.dialog.focus(self.input_id, move_cursor_to_end=True)
+        return False
+
+    def hide_input(self):
+        self.show_face_panel = False
+        self.face_dialog.close_dialog()
+        self.dialog.close_dialog()
+        return False
 
     def close(self):
         self.dialog.close_dialog()
         self.face_dialog.close_dialog()
+        self.item_detail_dialog.close_dialog()
+        if self.gm.get(self.overlay_key) is not None:
+            self.gm.remove(self.overlay_key)
 
     def render(self):
         current_input_state = ""
@@ -139,6 +218,7 @@ class ChatSystem:
             load_val={self.input_id: current_input_state},
             listen_keyboard=lambda: self.dialog.has_focus(),
             esc_close=False,
+            escape_callback=self.hide_input,
         )
         if had_focus:
             self.dialog.focus(self.input_id)
@@ -220,7 +300,7 @@ class ChatSystem:
             self.message_scroll = min(self.message_scroll + 1, self.__max_message_scroll())
         self.__remember_item_snapshots(message.item_links)
         self.__prune_item_snapshots()
-        if render:
+        if render and self.dialog.visible():
             self.render()
 
     def receive_network_message(self, sender: str, content: str, channel: str = "世界",
@@ -263,7 +343,7 @@ class ChatSystem:
         if face_index < 1 or face_index > self.face_cols * self.face_rows:
             return False
         if not self.dialog.visible():
-            self.show()
+            self.open_input()
         if not self.dialog.has_focus():
             self.dialog.focus(self.input_id, move_cursor_to_end=True)
         self.dialog.insert_text(self.input_id, self.__face_token(face_index))
@@ -292,20 +372,33 @@ class ChatSystem:
         if item is None:
             return False
         if not self.dialog.visible():
-            self.show()
+            self.open_input()
 
+        current_input = self.dialog.get_val(self.input_id) or ""
+        self.__prune_pending_item_links(current_input)
         item_name = getattr(item, "name", "") or "未知道具"
+        item_key = self.__pending_item_key(item)
+        if item_key and any(pending.get("item_key") == item_key for pending in self.pending_item_links):
+            GameToastManager.add_message("同一个道具单次只能发送一个")
+            self.dialog.focus(self.input_id, move_cursor_to_end=True)
+            return False
+        if len(self.pending_item_links) >= self.max_item_links_per_message:
+            GameToastManager.add_message(f"单条聊天最多发送 {self.max_item_links_per_message} 个道具")
+            self.dialog.focus(self.input_id, move_cursor_to_end=True)
+            return False
+
         label = f"[{item_name}]"
         self.pending_item_links.append({
             "label": label,
             "item": item,
             "uid": getattr(item, "UID", ""),
+            "item_key": item_key,
         })
 
-        current_input = self.dialog.get_val(self.input_id) or ""
         separator = "" if not current_input or current_input.endswith((" ", "　")) else " "
+        self.dialog.focus(self.input_id, move_cursor_to_end=True)
         self.dialog.insert_text(self.input_id, f"{separator}{label}")
-        self.dialog.focus(self.input_id)
+        self.dialog.focus(self.input_id, move_cursor_to_end=True)
         GameToastManager.add_message(f"已插入道具:{item_name}")
         return True
 
@@ -317,7 +410,11 @@ class ChatSystem:
         args = command.split()
         cmd = args[0].lower()
         if cmd in ("help", "?"):
-            self.add_message("系统", "GM", "-add money 数量 | -add item ID [数量] [强化] [品质] [秒] | -moveto [地图ID] 格子X,格子Y")
+            self.add_message(
+                "系统",
+                "GM",
+                "-add money 数量 | -add item ID [数量] [强化等级] [品质] [有效秒数] [主属性ID] [副属性ID] [主强度] [副强度] | -moveto [地图ID] 格子X,格子Y | -enter_dungeon 编号 | -leave_dungeon | -sta_dungeon"
+            )
             return
 
         if cmd == "clear":
@@ -333,7 +430,72 @@ class ChatSystem:
             self.__gm_moveto(args[1:])
             return
 
+        if cmd in ("dungeon", "fb"):
+            self.__gm_dungeon(args[1:])
+            return
+
+        if cmd == "enter_dungeon":
+            self.__gm_enter_dungeon(args[1:])
+            return
+
+        if cmd == "leave_dungeon":
+            self.__gm_leave_dungeon()
+            return
+
+        if cmd == "sta_dungeon":
+            self.__gm_sta_dungeon()
+            return
+
+        if cmd in self.unimplemented_commands:
+            self.__gm_unimplemented(cmd)
+            return
+
         self.add_message("系统", "GM", f"未知命令: -{command}")
+
+    def __gm_dungeon(self, args: list[str]):
+        if not args:
+            self.add_message("系统", "GM", "用法: -dungeon enter 编号 | -dungeon exit | -dungeon status")
+            return
+
+        from src.manager.DungeonManager import DungeonManager
+
+        action = args[0].lower()
+        if action in ("enter", "start"):
+            if len(args) < 2:
+                self.add_message("系统", "GM", "用法: -dungeon enter 编号")
+                return
+            ok, message = DungeonManager.enter_by_id(self.gm, args[1])
+            self.add_message("系统", "GM", message)
+            return
+        if action in ("exit", "leave"):
+            ok, message = DungeonManager.exit_current(self.gm)
+            self.add_message("系统", "GM", message)
+            return
+        if action in ("status", "info"):
+            self.add_message("系统", "GM", DungeonManager.status_text())
+            return
+
+        self.add_message("系统", "GM", "未知副本命令, 用法: -dungeon enter | exit | status")
+
+    def __gm_enter_dungeon(self, args: list[str]):
+        if not args:
+            self.add_message("系统", "GM", "用法: -enter_dungeon 编号")
+            return
+        from src.manager.DungeonManager import DungeonManager
+        ok, message = DungeonManager.enter_by_id(self.gm, args[0])
+        self.add_message("系统", "GM", message)
+
+    def __gm_leave_dungeon(self):
+        from src.manager.DungeonManager import DungeonManager
+        ok, message = DungeonManager.exit_current(self.gm)
+        self.add_message("系统", "GM", message)
+
+    def __gm_sta_dungeon(self):
+        from src.manager.DungeonManager import DungeonManager
+        self.add_message("系统", "GM", DungeonManager.status_text())
+
+    def __gm_unimplemented(self, cmd: str):
+        self.add_message("系统", "GM", f"-{cmd} 指令未实现")
 
     def __gm_add(self, args: list[str]):
         if not args:
@@ -347,6 +509,10 @@ class ChatSystem:
 
         if add_type == "item":
             self.__gm_add_item(args)
+            return
+
+        if add_type in ("exploit", "credit", "skill", "sp"):
+            self.__gm_unimplemented(f"add {add_type}")
             return
 
         self.add_message("系统", "GM", f"未知添加类型: {args[0]}")
@@ -371,13 +537,13 @@ class ChatSystem:
 
     def __gm_add_item(self, args: list[str]):
         if len(args) < 2:
-            self.add_message("系统", "GM", "用法: -add item 3 [数量] [强化等级] [white|green|blue|gold|purple] [有效秒数]")
+            self.add_message("系统", "GM", "用法: -add item 3 [数量] [强化等级] [品质] [有效秒数] [主属性ID] [副属性ID] [主强度] [副强度]")
             return
 
         item_id = args[1]
         extras = args[2:]
-        if len(extras) > 4:
-            self.add_message("系统", "GM", "参数过多, 用法: -add item ID [数量] [强化等级] [品质] [有效秒数]")
+        if len(extras) > 8:
+            self.add_message("系统", "GM", "参数过多, 用法: -add item ID [数量] [强化等级] [品质] [有效秒数] [主属性ID] [副属性ID] [主强度] [副强度]")
             return
 
         count = self.__parse_optional_int(extras, 0, 1, "道具数量必须是整数")
@@ -407,6 +573,24 @@ class ChatSystem:
             self.add_message("系统", "GM", "有效期不能小于 0")
             return
 
+        primary_attr_id = self.__parse_optional_int(extras, 4, 0, "主属性ID必须是整数")
+        if primary_attr_id is None:
+            return
+        secondary_attr_id = self.__parse_optional_int(extras, 5, 0, "副属性ID必须是整数")
+        if secondary_attr_id is None:
+            return
+        primary_attr_power = self.__parse_optional_attr_power(extras, 6, primary_attr_id, "主属性强度")
+        if primary_attr_power is None:
+            return
+        secondary_attr_power = self.__parse_optional_attr_power(extras, 7, secondary_attr_id, "副属性强度")
+        if secondary_attr_power is None:
+            return
+        if quality == "white":
+            primary_attr_id = 0
+            secondary_attr_id = 0
+            primary_attr_power = 0
+            secondary_attr_power = 0
+
         player = self.gm.get("主角")
         if not player or not getattr(player, "bag", None):
             self.add_message("系统", "GM", "当前没有可操作的角色")
@@ -423,7 +607,10 @@ class ChatSystem:
             return
 
         before_count = self.__count_bag_item(player.bag, item_id)
-        self.__add_item_to_bag(player.bag, item_data, item_id, count, expire_time, quality, enhance_level)
+        self.__add_item_to_bag(
+            player.bag, item_data, item_id, count, expire_time, quality, enhance_level,
+            primary_attr_id, secondary_attr_id, primary_attr_power, secondary_attr_power
+        )
         player.bag.update_blit = True
         after_count = self.__count_bag_item(player.bag, item_id)
 
@@ -433,7 +620,10 @@ class ChatSystem:
 
         expire_text = f", 有效期 {duration} 秒" if duration > 0 else ""
         enhance_text = f", 强化 +{enhance_level}" if enhance_level > 0 else ""
-        self.add_message("系统", "GM", f"已添加道具 {item_id} x{after_count - before_count}{enhance_text}, 品质 {quality}{expire_text}")
+        attr_text = ""
+        if primary_attr_id or secondary_attr_id:
+            attr_text = f", 主属性 {primary_attr_id or '-'}({primary_attr_power or '-'}), 副属性 {secondary_attr_id or '-'}({secondary_attr_power or '-'})"
+        self.add_message("系统", "GM", f"已添加道具 {item_id} x{after_count - before_count}{enhance_text}, 品质 {quality}{expire_text}{attr_text}")
 
     def __gm_moveto(self, args: list[str]):
         if not args:
@@ -509,15 +699,43 @@ class ChatSystem:
             self.add_message("系统", "GM", error_message)
             return None
 
+    def __parse_optional_attr_power(self, args: list[str], index: int, attr_id: int, label: str):
+        if attr_id <= 0:
+            return 0
+        if len(args) <= index:
+            return random.randint(1, 255)
+        raw_text = str(args[index] or "").strip().lower()
+        if raw_text in ("", "random", "rand", "r", "随机", "*"):
+            return random.randint(1, 255)
+        try:
+            value = int(raw_text)
+        except ValueError:
+            self.add_message("系统", "GM", f"{label}必须是 0-255 或 random")
+            return None
+        if value < 0 or value > 255:
+            self.add_message("系统", "GM", f"{label}必须在 0-255")
+            return None
+        return value
+
     @staticmethod
     def __count_bag_item(bag, item_id: str):
         return sum(int(item.count or 0) for item in bag.get_item_by_id(item_id))
 
     @staticmethod
     def __add_item_to_bag(bag, item_data: dict, item_id: str, count: int, expire_time: int, quality: str,
-                          enhance_level: int):
+                          enhance_level: int, primary_attr_id: int = 0, secondary_attr_id: int = 0,
+                          primary_attr_power: int = 0, secondary_attr_power: int = 0):
         if item_data.get("可重叠摆放") != "1":
-            bag.add_item(item_id, count, expire_time=expire_time, quality=quality, enhance_level=enhance_level)
+            bag.add_item(
+                item_id, count,
+                primary_attr_id=primary_attr_id,
+                secondary_attr_id=secondary_attr_id,
+                primary_attr_power=primary_attr_power,
+                secondary_attr_power=secondary_attr_power,
+                expire_time=expire_time,
+                quality=quality,
+                enhance_level=enhance_level
+            )
             return
 
         try:
@@ -528,7 +746,16 @@ class ChatSystem:
         remaining = count
         while remaining > 0:
             add_count = min(remaining, max_count)
-            bag.add_item(item_id, add_count, expire_time=expire_time, quality=quality, enhance_level=enhance_level)
+            bag.add_item(
+                item_id, add_count,
+                primary_attr_id=primary_attr_id,
+                secondary_attr_id=secondary_attr_id,
+                primary_attr_power=primary_attr_power,
+                secondary_attr_power=secondary_attr_power,
+                expire_time=expire_time,
+                quality=quality,
+                enhance_level=enhance_level
+            )
             remaining -= add_count
 
     def __build_messages_html(self):
@@ -577,13 +804,24 @@ class ChatSystem:
     def __max_message_scroll(self):
         return max(0, len(self.messages) - self.visible_messages)
 
+    def plain_message_text(self, msg: ChatMessage):
+        sender = f" {msg.sender}:" if msg.sender else ""
+        content = self.face_token_pattern.sub(lambda match: f"[表情{match.group(1) or match.group(2)}]", msg.content or "")
+        return f"[{msg.channel}]{sender} {content}".strip()
+
     def __consume_pending_item_links(self, text: str):
         if not self.pending_item_links:
             return []
 
         item_links = []
+        seen_keys = set()
         remaining_text = text
         for pending in self.pending_item_links:
+            if len(item_links) >= self.max_item_links_per_message:
+                break
+            item_key = pending.get("item_key")
+            if item_key and item_key in seen_keys:
+                continue
             label = pending.get("label", "")
             if not label or label not in remaining_text:
                 continue
@@ -591,6 +829,8 @@ class ChatSystem:
             snapshot_id = uuid4().hex[:10]
             snapshot["snapshot_id"] = snapshot_id
             self.item_snapshots[snapshot_id] = snapshot
+            if item_key:
+                seen_keys.add(item_key)
             item_links.append({
                 "label": label,
                 "snapshot_id": snapshot_id,
@@ -600,6 +840,15 @@ class ChatSystem:
 
         self.pending_item_links.clear()
         return item_links
+
+    def __prune_pending_item_links(self, text: str):
+        if not self.pending_item_links:
+            return
+        text = text or ""
+        self.pending_item_links = [
+            pending for pending in self.pending_item_links
+            if pending.get("label") and pending.get("label") in text
+        ]
 
     def __build_rich_message_html(self, msg: ChatMessage):
         segments = [("text", f"[{msg.channel}] {msg.sender}:", None)]
@@ -620,35 +869,71 @@ class ChatSystem:
             segments.append(("text", content[cursor:], None))
 
         segments = self.__expand_face_segments(segments)
+        rows = []
         children = []
+        row_width = 0
         for kind, text, link in segments:
             if not text:
                 continue
-            if kind == "face":
-                face_src = self.__face_img_src(int(text))
-                if face_src:
-                    children.append(
-                        f'<img src="{face_src}" width="{self.face_display_size}" height="{self.face_display_size}" img-size="{self.face_display_size},{self.face_display_size}" />'
-                    )
-                else:
-                    children.append(
-                        f'<p width="48" color="{msg.color}" font-size="12">{html.escape(self.__face_token(int(text)))}</p>'
-                    )
-            elif kind == "link" and link:
-                safe_text = html.escape(str(text))
-                width = self.__chat_segment_width(str(text))
-                event_key = self.__item_event_key(link)
-                children.append(
-                    f'<a width="{width}" color="#64C8FF" font-size="12" @click="{event_key}">{safe_text}</a>'
-                )
-            else:
-                safe_text = html.escape(str(text))
-                width = self.__chat_segment_width(str(text))
-                children.append(f'<p width="{width}" color="{msg.color}" font-size="12">{safe_text}</p>')
+            for split_text in self.__split_message_segment(kind, str(text)):
+                width = self.__segment_width(kind, split_text)
+                gap_width = 10 if children else 0
+                if children and row_width + gap_width + width > self.chat_line_width:
+                    rows.append(children)
+                    children = []
+                    row_width = 0
+                    gap_width = 0
 
-        if not children:
+                children.append(self.__segment_html(kind, split_text, link, msg, width))
+                row_width += gap_width + width
+
+        if children:
+            rows.append(children)
+
+        if not rows:
             return f'<p color="{msg.color}" font-size="12">{html.escape(content)}</p>'
-        return f'<row>{"".join(children)}</row>'
+        return "\n            ".join(f'<row>{"".join(row)}</row>' for row in rows)
+
+    def __segment_html(self, kind: str, text: str, link: dict | None, msg: ChatMessage, width: int):
+        if kind == "face":
+            face_src = self.__face_img_src(int(text))
+            if face_src:
+                return (
+                    f'<img src="{face_src}" width="{self.face_display_size}" height="{self.face_display_size}" '
+                    f'img-size="{self.face_display_size},{self.face_display_size}" />'
+                )
+            return f'<p width="48" color="{msg.color}" font-size="12">{html.escape(self.__face_token(int(text)))}</p>'
+
+        safe_text = html.escape(str(text))
+        if kind == "link" and link:
+            event_key = self.__item_event_key(link)
+            return f'<a width="{width}" color="#64C8FF" font-size="12" @click="{event_key}">{safe_text}</a>'
+        return f'<p width="{width}" color="{msg.color}" font-size="12">{safe_text}</p>'
+
+    def __segment_width(self, kind: str, text: str):
+        if kind == "face":
+            return self.face_display_size
+        return self.__chat_segment_width(text)
+
+    def __split_message_segment(self, kind: str, text: str):
+        if kind != "text":
+            return [text]
+
+        parts = []
+        current = ""
+        current_width = 0
+        for ch in str(text):
+            ch_width = self.__chat_segment_width(ch)
+            if current and current_width + ch_width > self.chat_line_width:
+                parts.append(current)
+                current = ch
+                current_width = ch_width
+                continue
+            current += ch
+            current_width += ch_width
+        if current:
+            parts.append(current)
+        return parts
 
     def __expand_face_segments(self, segments: list[tuple[str, str, dict | None]]):
         expanded = []
@@ -674,11 +959,9 @@ class ChatSystem:
         for channel in self.channel_order:
             label = self.channel_labels.get(channel, channel)
             state = "active" if channel == self.current_channel else "idle"
-            if channel == self.current_channel:
-                label = f">{label}"
             color = "#FFE08A" if channel == self.current_channel else "#FFFFFF"
             buttons.append(
-                f'<button id="chat_channel_{channel}_{state}" width="68" height="24" color="{color}" @click="chat_channel_{channel}">{html.escape(label)}</button>'
+                f'<button id="chat_channel_{channel}_{state}" width="54" height="24" color="{color}" @click="chat_channel_{channel}">{html.escape(label)}</button>'
             )
         return "\n        ".join(buttons)
 
@@ -754,10 +1037,21 @@ class ChatSystem:
 
     @staticmethod
     def __chat_segment_width(text: str):
-        width = 8
+        width = 4
         for ch in text:
-            width += 12 if ord(ch) > 127 else 7
-        return max(18, min(width, 300))
+            width += 13 if ord(ch) > 127 else 8
+        return max(12, min(width, 300))
+
+    @staticmethod
+    def __pending_item_key(item):
+        uid = str(getattr(item, "UID", "") or "").strip()
+        if uid:
+            return f"uid:{uid}"
+        item_id = str(getattr(item, "ID", "") or "").strip()
+        if item_id:
+            return f"id:{item_id}"
+        name = str(getattr(item, "name", "") or "").strip()
+        return f"name:{name}" if name else ""
 
     @staticmethod
     def __item_event_key(link: dict):
@@ -781,6 +1075,10 @@ class ChatSystem:
             "count": int(getattr(item, "count", 1) or 1),
             "quality": str(getattr(item, "quality", "") or "white"),
             "enhance_level": int(getattr(item, "enhance_level", 0) or 0),
+            "primary_attr_id": int(getattr(item, "primary_attr_id", 0) or 0),
+            "secondary_attr_id": int(getattr(item, "secondary_attr_id", 0) or 0),
+            "primary_attr_power": int(getattr(item, "primary_attr_power", 85) or 85),
+            "secondary_attr_power": int(getattr(item, "secondary_attr_power", 85) or 85),
             "type_name": self.__get_item_type_name(item),
             "level": int(getattr(item, "level_requirement", getattr(item, "level", 1)) or 0),
             "bind": bool(getattr(item, "bind", False)),
@@ -844,6 +1142,10 @@ class ChatSystem:
         level = int(snapshot.get("level", 0) or 0)
         money = int(snapshot.get("money", 0) or 0)
         points = int(snapshot.get("points", 0) or 0)
+        primary_attr_id = int(snapshot.get("primary_attr_id", 0) or 0)
+        secondary_attr_id = int(snapshot.get("secondary_attr_id", 0) or 0)
+        primary_attr_power = int(snapshot.get("primary_attr_power", 85) or 85)
+        secondary_attr_power = int(snapshot.get("secondary_attr_power", 85) or 85)
         icon_src = self.__chat_item_icon_src(snapshot)
 
         body = [
@@ -869,6 +1171,10 @@ class ChatSystem:
             body.append(f'<p color="#FFE08A" font-size="12">价值:{money} 金币</p>')
         if points > 0:
             body.append(f'<p color="#FFE08A" font-size="12">点数:{points}</p>')
+        if quality.lower() != "white" and primary_attr_id > 0:
+            body.append(f'<p color="#40C8FF" font-size="12">主属性:{primary_attr_power}</p>')
+        if quality.lower() != "white" and secondary_attr_id > 0:
+            body.append(f'<p color="#40C8FF" font-size="12">副属性:{secondary_attr_power}</p>')
         for attr in snapshot.get("display_attrs", []):
             attr_text = html.escape(str(attr.get("text", "")))
             if attr_text:

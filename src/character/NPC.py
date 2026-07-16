@@ -68,10 +68,29 @@ class NpcSprite(SpriteBase):
         # 加载动画
         self.load_animations()
 
+    @staticmethod
+    def __to_int(value, default: int = 0) -> int:
+        try:
+            if value in (None, ""):
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    def __pick_data(self, *keys: str):
+        for key in keys:
+            value = self.__npc_data.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    def __get_int(self, default: int, *keys: str) -> int:
+        return self.__to_int(self.__pick_data(*keys), default)
+
     def __init_status(self):
         self.ID = self.__npc_data.get("ID")
         self.name = self.__npc_data.get("名称")
-        self.type = int(self.__npc_data.get("类型"))
+        self.type = self.__get_int(0, "类型")
 
         user_actor_data = SourceManager.get_csv("user_actor", self.__npc_data.get("模型ID"))
         super().loading_model(user_actor_data)
@@ -84,25 +103,28 @@ class NpcSprite(SpriteBase):
 
         avatar_name = self.__npc_data.get("头像", "")
         self.avatar = None if not avatar_name else SourceManager.load(f"{SourceManager.ui_face_path}/{avatar_name}.png")
-        self.restart_time = int(self.__npc_data.get("重生周期", "0"))
+        self.restart_time = self.__get_int(0, "重生周期")
         self.re_curr_time = 0
         """当前的重生计时"""
         self.default_dialog = self.__npc_data.get("默认对话")
 
-        self.healthy = int(self.__npc_data.get("生命"))
+        self.healthy = self.__get_int(self.healthy, "生命", "healthy")
         self.max_healthy = self.healthy
-        self.mana = int(self.__npc_data.get("法力"))
-        self.attack = int(self.__npc_data.get("伤害"))
-        self.defense = int(self.__npc_data.get("防御"))
-        self.attack_speed = int(self.__npc_data.get("攻速"))
-        self.level = int(self.__npc_data.get("等级"))
-        self.miss = int(self.__npc_data.get("闪避"))
-        self.strength = int(self.__npc_data.get("力量"))
-        self.intelligence = int(self.__npc_data.get("智力"))
-        self.constitution = int(self.__npc_data.get("体质"))
-        self.agile = int(self.__npc_data.get("敏捷"))
-        self.endurance = int(self.__npc_data.get("耐力"))
-        self.random_move_radius = int(self.__npc_data.get("巡逻范围", "0") or "0")  # 以当前坐标为中心，最大移动格数
+        self.mana = self.__get_int(self.mana, "法力", "mana")
+        self.max_mana = self.__get_int(self.mana, "最大法力", "max_mana", "MaxMp")
+        self.attack = self.__get_int(self.attack, "伤害", "attack")
+        self.defense = self.__get_int(self.defense, "防御", "defense")
+        self.attack_speed = self.__get_int(self.attack_speed, "攻速", "攻击速度", "attack_speed")
+        self.level = self.__get_int(self.level, "等级", "level")
+        self.miss = self.__get_int(self.miss, "闪避", "闪躲", "miss")
+        self.hit = self.__get_int(self.hit, "命中", "hit")
+        self.critical_rate = self.__get_int(self.critical_rate, "必杀率", "爆击率", "暴击率", "critical_rate")
+        self.strength = self.__get_int(self.strength, "力量", "strength")
+        self.intelligence = self.__get_int(self.intelligence, "智力", "intelligence")
+        self.constitution = self.__get_int(self.constitution, "体质", "constitution")
+        self.agile = self.__get_int(self.agile, "敏捷", "agile")
+        self.endurance = self.__get_int(self.endurance, "耐力", "endurance")
+        self.random_move_radius = self.__get_int(0, "巡逻范围")  # 以当前坐标为中心，最大移动格数
         self.__return_origin = self.random_move_radius  # 定为和巡逻距离一样吧, 后续有改动再说
 
         self.current_path.clear()  # 清空当前路径
@@ -503,6 +525,11 @@ class NpcSprite(SpriteBase):
             battle_npc.sprite_state = SpriteState.ATTACK
             battle_npc.battle_state = True
             arr.append(battle_npc)
+        try:
+            from src.manager.DungeonManager import DungeonManager
+            DungeonManager.on_battle_start(self, arr)
+        except Exception as exc:
+            GameLogManager.log_service_error(f"副本战斗标记失败:{exc}")
         # 触发战斗场景
         BattleManager.battle_start(GameManager.get("主角"), arr)
         arr.clear()

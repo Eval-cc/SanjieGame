@@ -116,13 +116,14 @@ class GameManager:
             cls.add("相机", cls.game_camera)
 
         # 初始化脚本
-        load_cav_arr = ["npcs", "items", "item_type", "skills", "user_actor", "exp","attribs"]
+        load_cav_arr = ["npcs", "items", "item_type", "skills", "user_actor", "exp", "attribs",
+                        "dungeons", "dungeon_monsters", "dungeon_spawn_groups"]
         for csv_name in load_cav_arr:
             if not os.path.exists(rf"{SourceManager.cfg_csv_path}/{csv_name}.csv"):
                 GameLogManager.log_service_error(f"无法找到脚本:{csv_name}")
                 continue
             has_raw = False
-            if csv_name == "item_type":
+            if csv_name in ("item_type", "dungeon_monsters", "dungeon_spawn_groups"):
                 has_raw = True
             SourceManager.set_csv(csv_name, GameLoadCSV.load(rf"{SourceManager.cfg_csv_path}/{csv_name}.csv"), has_raw)
 
@@ -393,12 +394,18 @@ class GameManager:
         """
         from src.manager.GameMapManager import GameMapManager
         from src.render.GameLogin import GameLogin
+        from src.manager.DungeonManager import DungeonManager
+        from src.system.TaskSystem import TaskManager
+        DungeonManager.on_logout(cls.get("主角"))
+        TaskManager.clear_temporary_tasks()
         if cls.chat_system:
             cls.chat_system.close()
             cls.chat_system = None
         if cls.shop_system:
             del cls.shop_system
             cls.shop_system = None
+        if cls.weather_sys:
+            cls.weather_sys.clear()
 
         game_ui: "GameUI" = cls.get("游戏UI")
         if game_ui:

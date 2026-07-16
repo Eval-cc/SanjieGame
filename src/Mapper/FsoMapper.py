@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from src.manager.GameLogManger import GameLogManager
 from src.manager.GameMapManager import GameMapManager
+from src.manager.DungeonManager import DungeonManager
 from src.system.SkillSystem import SkillSystem
 
 if TYPE_CHECKING:
@@ -31,7 +32,7 @@ class FsoMapper:
     def update_pos(cls):
         """更新角色数据"""
         u_player: "Player" = cls.gm.get("主角")
-        upos = u_player.get_pos_world()
+        save_map_id, save_x, save_y = DungeonManager.get_persistent_save_location(GameMapManager.map_id, u_player)
         # 将变量直接打包成元组，通过参数化查询防止注入
         sql = '''
               UPDATE fso
@@ -53,7 +54,7 @@ class FsoMapper:
               '''
 
         params = (
-            GameMapManager.map_id, upos[0], upos[1], u_player.healthy, u_player.mana,
+            save_map_id, save_x, save_y, u_player.healthy, u_player.mana,
             u_player.attack, u_player.defense, u_player.attack_speed,
             u_player.bag.get_full_save_data(), getattr(u_player, "level", 1),
             getattr(u_player, "curr_exp", 0), getattr(u_player, "upgrade_exp", 0),

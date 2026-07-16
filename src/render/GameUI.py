@@ -577,7 +577,9 @@ class GameUI(SpriteBase):
             # Esc关闭UI, 根据事件的顺序
             for sur in self.rect_list:
                 if sur.get("listen_keyboard") and sur.get("show") and sur.get("listen_keyboard")():
-                    if sur.get("esc_close", True):
+                    if sur.get("escape_callback"):
+                        sur["escape_callback"]()
+                    elif sur.get("esc_close", True):
                         self.close_surface_ui(sur.get("name"))
                     elif sur.get("key_down"):
                         sur["key_down"](event)

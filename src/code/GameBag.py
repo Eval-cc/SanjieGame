@@ -232,7 +232,8 @@ class GameBag:
 
     def add_item(self, item_id: str, total: int = 0, merge: bool = True, target_page: int = -1,
                  target_x: int = -1, target_y: int = -1, has_call: bool = False,
-                 primary_attr_id: int = 0, secondary_attr_id: int = 0, expire_time: int = 0,
+                 primary_attr_id: int = 0, secondary_attr_id: int = 0,
+                 primary_attr_power: int = 0, secondary_attr_power: int = 0, expire_time: int = 0,
                  quality: str = "white", enhance_level: int = 0):
         """
         向背包添加物品
@@ -245,12 +246,20 @@ class GameBag:
         :param has_call: 是否是递归调用追加道具方法
         :param primary_attr_id: 装备额外主属性id
         :param secondary_attr_id: 装备额外副属性id
+        :param primary_attr_power: 装备额外主属性强度 0-255
+        :param secondary_attr_power: 装备额外副属性强度 0-255
         :param expire_time: 装备过期时间 0 则永久
         :param quality: 道具品质预留字段
         :param enhance_level: 强化等级
         :return:
         """
         call_total = 0
+        quality = str(quality or "white").lower()
+        if quality == "white":
+            primary_attr_id = 0
+            secondary_attr_id = 0
+            primary_attr_power = 0
+            secondary_attr_power = 0
 
         item_template: dict[str, str | int | list] = SourceManager.get_csv("items", str(item_id))
         if item_template is None:
@@ -324,6 +333,12 @@ class GameBag:
         if secondary_attr_id:
             item_data["副属性"] = secondary_attr_id
 
+        if primary_attr_power:
+            item_data["主属性强度"] = primary_attr_power
+
+        if secondary_attr_power:
+            item_data["副属性强度"] = secondary_attr_power
+
         if expire_time:
             item_data["过期时间"] = expire_time
         if quality:
@@ -343,8 +358,16 @@ class GameBag:
         self.update_blit = True
         if call_total > 0:
             for i in range(call_total, 0, -1):
-                self.add_item(item_id, i - 1, has_call=True, expire_time=expire_time, quality=quality,
-                              enhance_level=enhance_level)
+                self.add_item(
+                    item_id, i - 1, has_call=True,
+                    primary_attr_id=primary_attr_id,
+                    secondary_attr_id=secondary_attr_id,
+                    primary_attr_power=primary_attr_power,
+                    secondary_attr_power=secondary_attr_power,
+                    expire_time=expire_time,
+                    quality=quality,
+                    enhance_level=enhance_level
+                )
 
     def add_item_exist(self, item: Item):
         """将已有的道具增加到背包里面"""
@@ -1225,15 +1248,29 @@ class GameBag:
         # 道具类型
         mask_sur.blit(GameFont.get_text_surface_line(self.get_item_type(item), True, 11, "#00BFFF"),
                       (65, 25))
+        use_level_y = 40
+        if item.type == 1 and hasattr(item, "has_affix_attrs") and item.has_affix_attrs():
+            if int(getattr(item, "primary_attr_id", 0) or 0) > 0:
+                mask_sur.blit(
+                    GameFont.get_text_surface_line(f"主属性:{int(getattr(item, 'primary_attr_power', 0) or 0)}", True, 11, "#40C8FF"),
+                    (65, use_level_y)
+                )
+                use_level_y += 15
+            if int(getattr(item, "secondary_attr_id", 0) or 0) > 0:
+                mask_sur.blit(
+                    GameFont.get_text_surface_line(f"副属性:{int(getattr(item, 'secondary_attr_power', 0) or 0)}", True, 11, "#40C8FF"),
+                    (65, use_level_y)
+                )
+                use_level_y += 15
         mask_sur.blit(
             GameFont.get_text_surface_line(f"使用等级: [#FF7F24]{item.level}", True, 11, "#FFFFFF"),
-            (65, 40))
+            (65, use_level_y))
 
         if item.can_stack and item.count > 1:
             mask_sur.blit(GameFont.get_text_surface_line(f"数量:{item.count}", True, 11, "#FFFFFF"),
-                          (65, 55))
+                          (65, use_level_y + 15))
 
-        render_y = 90
+        render_y = max(90, use_level_y + 35)
         if item.type == 1:
             # 直接调用新方法获取已经排好序、分好色的数组
             display_list = item.get_display_attrs()
@@ -1372,19 +1409,28 @@ class GameBag:
                 # 主副属性 / 有效期 / 品质 / 强化等级
                 primary_attr_id = 0
                 secondary_attr_id = 0
+                primary_attr_power = 85
+                secondary_attr_power = 85
                 expire_time = 0
                 quality = "white"
                 enhance_level = 0
                 if item_info and len(extras) > 0:
-                    padded_extras = extras + [""] * 5
+                    padded_extras = extras + [""] * 7
                     match self.__safe_int(item_info.get("类型")):
-                        # 装备类: 兼容旧格式 uid,page,y,x,id,count,主属性,副属性,过期时间
+                        # 装备类: uid,page,y,x,id,count,主属性,副属性,过期时间,品质,强化等级,主属性强度,副属性强度
                         case 1:
                             primary_attr_id = self.__safe_int(padded_extras[0])
                             secondary_attr_id = self.__safe_int(padded_extras[1])
                             expire_time = self.__safe_int(padded_extras[2])
                             quality = self.__safe_str(padded_extras[3], "white")
                             enhance_level = self.__safe_int(padded_extras[4])
+                            primary_attr_power = self.__safe_int(padded_extras[5], 85)
+                            secondary_attr_power = self.__safe_int(padded_extras[6], 85)
+                            if quality.lower() == "white":
+                                primary_attr_id = 0
+                                secondary_attr_id = 0
+                                primary_attr_power = 0
+                                secondary_attr_power = 0
                         # 非装备类旧格式没有主副属性, 新格式从 extras[0] 开始追加品质/强化/过期时间
                         case _:
                             quality = self.__safe_str(padded_extras[0], "white")
@@ -1418,6 +1464,9 @@ class GameBag:
                         if secondary_attr_id:
                             new_data["副属性"] = secondary_attr_id
 
+                        new_data["主属性强度"] = primary_attr_power
+                        new_data["副属性强度"] = secondary_attr_power
+
                         if expire_time:
                             new_data["过期时间"] = expire_time
 
@@ -1437,6 +1486,10 @@ class GameBag:
                 # 判定 B: 道具 ID 没变 -> 更新数量和扩展字段，保留原 UID
                 else:
                     current_item.count = count
+                    current_item.primary_attr_id = primary_attr_id
+                    current_item.secondary_attr_id = secondary_attr_id
+                    current_item.primary_attr_power = primary_attr_power
+                    current_item.secondary_attr_power = secondary_attr_power
                     current_item.quality = str(quality or "white")
                     current_item.enhance_level = self.__safe_int(enhance_level)
                     current_item.expire_time = self.__safe_int(expire_time)
@@ -1468,6 +1521,8 @@ class GameBag:
                 expire = self.__safe_int(e_data[4])
                 quality = self.__safe_str(e_data[5] if len(e_data) > 5 else "", "white")
                 enhance_level = self.__safe_int(e_data[6] if len(e_data) > 6 else "")
+                p_power = self.__safe_int(e_data[7] if len(e_data) > 7 else "", 85)
+                s_power = self.__safe_int(e_data[8] if len(e_data) > 8 else "", 85)
 
                 # 创建 Item 对象
                 config = SourceManager.get_csv("items", item_id)
@@ -1476,9 +1531,13 @@ class GameBag:
                     config["__pos"] = [-1,-1,-1]
                     config["品质"] = quality
                     config["强化等级"] = enhance_level
+                    config["主属性强度"] = p_power
+                    config["副属性强度"] = s_power
                     item = Item(config)
                     item.primary_attr_id = p_attr
                     item.secondary_attr_id = s_attr
+                    item.primary_attr_power = p_power
+                    item.secondary_attr_power = s_power
                     item.expire_time = expire
                     item.quality = quality
                     item.enhance_level = enhance_level
@@ -1506,7 +1565,9 @@ class GameBag:
                 equip_str = (
                     f"{slot_key},{item.ID},{item.primary_attr_id},{item.secondary_attr_id},"
                     f"{item.expire_time},{getattr(item, 'quality', 'white') or 'white'},"
-                    f"{int(getattr(item, 'enhance_level', 0) or 0)}"
+                    f"{int(getattr(item, 'enhance_level', 0) or 0)},"
+                    f"{int(getattr(item, 'primary_attr_power', 85) or 85)},"
+                    f"{int(getattr(item, 'secondary_attr_power', 85) or 85)}"
                 )
                 serialized_equips.append(equip_str)
 
@@ -1548,7 +1609,9 @@ class GameBag:
                     if item.type == 1:
                         item_str += (
                             f",{item.primary_attr_id},{item.secondary_attr_id},{expire_time},"
-                            f"{quality},{enhance_level}"
+                            f"{quality},{enhance_level},"
+                            f"{int(getattr(item, 'primary_attr_power', 85) or 85)},"
+                            f"{int(getattr(item, 'secondary_attr_power', 85) or 85)}"
                         )
                     elif quality != "white" or enhance_level > 0 or expire_time > 0:
                         item_str += f",{quality},{enhance_level},{expire_time}"

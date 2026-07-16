@@ -231,9 +231,12 @@ class GameEvent:
                         f"未能找到类:{getattr(var, "clsName")}的点击监听方法 [is_clicked=>{hasattr(var, "is_clicked")}] 或 [{mouse_type}=>{hasattr(var, mouse_type)}]")
 
     @staticmethod
-    def trigger_keyboard_event(event: pygame.Event | int, key_type: int):
+    def trigger_keyboard_event(event: pygame.Event | int, key_type: int) -> bool:
         event_key = event if type(event) == int else event.key if hasattr(event, "key") else event
         if key_type == 6:
+            if GameEvent.__is_enter_key(event_key) and GameEvent.__has_ctrl_modifier(event):
+                return GameEvent.__open_chat_input()
+
             has_focused_input = GameEvent.has_focused_input()
             if not GameEvent.has_control_down:
                 lr_control = [1073742048, 1073742052]  # 左右ctrl
@@ -247,7 +250,7 @@ class GameEvent:
                         event_fun()
                     GameLogManager.log_service_debug(f"触发快捷键事件,全局唯一,不用处理分发,code:[{event_key}]")
             if GameEvent.has_control_down and not has_focused_input:
-                return
+                return True
         else:
             GameEvent.has_key_down = False
             GameEvent.has_control_down = False
@@ -263,21 +266,43 @@ class GameEvent:
                     int(key_type))  # "key_down" if key_type == 6 else "key_up" if key_type == 7 else "keyboard_pressed"
                 if type_name is None:
                     GameLogManager.log_service_error(f"未知的键盘事件类型:{key_type}")
-                    return
+                    return False
                 if hasattr(var, type_name):
                     method = getattr(var, type_name)
                     # 如果调用方法返回 False 就结束,  如果返回True就说明允许向下穿透
                     if hasattr(event, "text"):
                         method({"event": event, "type": type_name, "key_name": "", "text": event.text})
-                        return
+                        return True
                     key_name = pygame.key.name(event_key)
 
-                    if not method({"event": event, "type": type_name, "key_name": key_name}):
-                        return
+                    if method({"event": event, "type": type_name, "key_name": key_name}) is not True:
+                        return True
 
                 else:
                     GameLogManager.log_service_error(
                         f"未能找到类:{getattr(var, "clsName")}的键盘监听方法 [{type_name}=>{hasattr(var, type_name)}]")
+        if key_type == 6 and GameEvent.__is_enter_key(event_key) and not GameEvent.has_focused_input():
+            return GameEvent.__open_chat_input()
+        return False
+
+    @staticmethod
+    def __is_enter_key(event_key) -> bool:
+        return event_key in (pygame.K_RETURN, pygame.K_KP_ENTER)
+
+    @staticmethod
+    def __has_ctrl_modifier(event) -> bool:
+        mods = getattr(event, "mod", 0) or pygame.key.get_mods()
+        return bool(mods & (pygame.KMOD_CTRL | getattr(pygame, "KMOD_META", 0)))
+
+    @staticmethod
+    def __open_chat_input() -> bool:
+        chat_system = getattr(GameManager, "chat_system", None)
+        if chat_system is None or GameManager.get("主角") is None:
+            return False
+        if not hasattr(chat_system, "open_input"):
+            return False
+        chat_system.open_input()
+        return True
 
     @staticmethod
     def add_input(component: "GameInput"):

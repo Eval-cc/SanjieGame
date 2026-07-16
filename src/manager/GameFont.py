@@ -71,22 +71,37 @@ class GameFont:
     @staticmethod
     def parse_color_string(format_str: str):
         """格式化文本, 把十六进制的颜色转为 RGB格式"""
-        pattern = re.compile(r"(?:\[#([0-9A-Fa-f]{6}|end)])?([^\[#]+)")
+        text = str(format_str or "")
         result = []
-
         current_color = None
-        for match in pattern.finditer(format_str):
-            color_tag, text = match.groups()
-            if color_tag:
-                if color_tag.lower() == "end":
-                    current_color = None
-                else:
-                    current_color = GameFont.hex_color_to_rgb(f"#{color_tag}")
-            result.append({
-                "label": text,
-                "color": current_color
-            })
+        buffer = []
+        i = 0
 
+        def flush_buffer():
+            nonlocal buffer
+            if buffer:
+                result.append({
+                    "label": "".join(buffer),
+                    "color": current_color
+                })
+                buffer = []
+
+        while i < len(text):
+            if text.startswith("[#", i):
+                end_index = text.find("]", i)
+                tag = text[i + 2:end_index] if end_index != -1 else ""
+                if re.fullmatch(r"[0-9A-Fa-f]{6}|end", tag or ""):
+                    flush_buffer()
+                    if tag.lower() == "end":
+                        current_color = None
+                    else:
+                        current_color = GameFont.hex_color_to_rgb(f"#{tag}")
+                    i = end_index + 1
+                    continue
+            buffer.append(text[i])
+            i += 1
+
+        flush_buffer()
         return result
 
     @staticmethod

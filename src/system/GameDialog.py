@@ -95,7 +95,7 @@ class GameDialog:
     def show_dialog(self, dialog_path: str, npc=None, render_x: int = 5, render_y: int = -1, dialog_callback=None,
                     overwrite_path: bool = False, dialog_event_dict: Dict[str, Any] = None, loc: str = "middle",
                     load_val: Dict[str, Any] = None, always_on_top: bool = False, hover_callback: bool = False,
-                    listen_keyboard=None, esc_close: bool = True):
+                    listen_keyboard=None, esc_close: bool = True, escape_callback=None):
 
         """调用NPC对话"""
         self.__scroll_y = 0
@@ -203,7 +203,8 @@ class GameDialog:
                                                           "listen_keyboard": self.__listen_keyboard,
                                                           "hide_callback": self.__hide_callback,
                                                           "always_on_top": always_on_top,
-                                                          "esc_close": esc_close
+                                                          "esc_close": esc_close,
+                                                          "escape_callback": escape_callback
                                                           # "un_allow": True  # 显示此UI的时候 禁止其他操作, 除了另一个UI
                                                       }, sort=True)
                 self.rect = rect
@@ -239,6 +240,7 @@ class GameDialog:
                 win_sprite["always_on_top"] = always_on_top
                 win_sprite["listen_keyboard"] = self.__listen_keyboard
                 win_sprite["esc_close"] = esc_close
+                win_sprite["escape_callback"] = escape_callback
             if self.__scroll_max > 0:
                 scrollbar_x = dialog_sur.get_width() - 8
                 scrollbar_height = max(20, (visible_height / (self.__render_full_height + 1)) * visible_height)

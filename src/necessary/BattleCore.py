@@ -141,21 +141,67 @@ class BattleRules:
         return int(getattr(unit, "attack_speed", 0) or 0)
 
     @staticmethod
-    def calc_damage(actor, target, base_damage: int = 0, defending: bool = False) -> int:
+    def _to_int(value, default: int = 0) -> int:
+        try:
+            if value in (None, ""):
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    @staticmethod
+    def _clamp(value: float, min_value: float, max_value: float) -> float:
+        return max(min_value, min(max_value, value))
+
+    @staticmethod
+    def _attr(unit, attr_name: str, default: int = 0) -> int:
+        return BattleRules._to_int(getattr(unit, attr_name, default), default)
+
+    @staticmethod
+    def calc_damage_detail(actor, target, base_damage: int = 0,
+                           defending: bool = False, skill=None) -> dict[str, Any]:
+        hit_value = BattleRules._attr(actor, "hit")
+        dodge_value = BattleRules._attr(target, "miss")
+        hit_rate = 1.0
+        if hit_value > 0 or dodge_value > 0:
+            hit_rate = BattleRules._clamp(0.95 + ((hit_value - dodge_value) / 1000.0), 0.05, 0.98)
+        if random.random() > hit_rate:
+            return {
+                "damage": 0,
+                "miss": True,
+                "critical": False,
+                "hit_rate": hit_rate,
+                "critical_rate": 0.0,
+            }
+
         raw = int(base_damage or getattr(actor, "attack", 1) or 1)
-        defense = int(getattr(target, "defense", 0) or 0)
-        critical = random.random() < 0.12
+        defense = BattleRules._attr(target, "defense")
+        critical_rate = BattleRules._clamp((12 + BattleRules._attr(actor, "critical_rate")) / 100.0, 0.0, 0.95)
+        critical = random.random() < critical_rate
         fluctuation = random.uniform(0.9, 1.1)
-        damage = int(max(1, (raw - defense) * fluctuation))
+        damage = max(1, int(math.floor(max(1, raw - defense) * fluctuation)))
+        if critical:
+            damage = max(1, int(math.floor(damage * 1.5)))
         if defending:
-            damage = max(1, math.ceil(damage * 0.45))
-        return max(1, math.ceil(damage * (1.5 if critical else 1.0)))
+            damage = max(1, int(math.floor(damage * 0.45)))
+        return {
+            "damage": damage,
+            "miss": False,
+            "critical": critical,
+            "hit_rate": hit_rate,
+            "critical_rate": critical_rate,
+        }
+
+    @staticmethod
+    def calc_damage(actor, target, base_damage: int = 0, defending: bool = False, skill=None) -> int:
+        return BattleRules.calc_damage_detail(actor, target, base_damage, defending, skill).get("damage", 0)
 
     @staticmethod
     def apply_damage(actor, target, base_damage: int = 0, skill=None,
                      mutate: bool = True, defending: bool = False) -> BattleEffect:
         hp_before = int(getattr(target, "healthy", 0) or 0)
-        damage = BattleRules.calc_damage(actor, target, base_damage, defending)
+        detail = BattleRules.calc_damage_detail(actor, target, base_damage, defending, skill)
+        damage = BattleRules._to_int(detail.get("damage"), 0)
         hp_after = max(0, hp_before - damage)
         if mutate:
             target.healthy = hp_after
@@ -177,8 +223,14 @@ class BattleRules:
             hp_after=hp_after,
             skill_id=str(getattr(skill, "skill_id", "") if skill else ""),
             skill_name=str(getattr(skill, "name", "") if skill else ""),
-            extra={"defending": defending},
-            message=f"{getattr(actor, 'name', '单位')} 对 {getattr(target, 'name', '目标')} 造成 {damage} 点伤害",
+            success=not bool(detail.get("miss")),
+            extra={**detail, "defending": defending},
+            message=(
+                f"{getattr(actor, 'name', '单位')} 对 {getattr(target, 'name', '目标')} 未命中"
+                if detail.get("miss")
+                else f"{getattr(actor, 'name', '单位')} 对 {getattr(target, 'name', '目标')}"
+                     f"{'暴击' if detail.get('critical') else ''}造成 {damage} 点伤害"
+            ),
         )
 
     @staticmethod

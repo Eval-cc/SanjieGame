@@ -70,11 +70,14 @@ class SpriteBase:
         self.healthy: int = 10
         self.max_healthy: int = 10
         self.mana: int = 0
+        self.max_mana: int = 0
         self.attack: int = 0
         self.defense: int = 0
         self.attack_speed: int = 0
         self.level: int = 1  # 等级
         self.miss: int = 0  # 闪避
+        self.hit: int = 0  # 命中
+        self.critical_rate: int = 0  # 暴击/必杀率, 百分点
         self.strength: int = 1  # 力量
         self.intelligence: int = 1  # 智力
         self.constitution: int = 1  # 体质
@@ -170,11 +173,14 @@ class SpriteBase:
             "name": self.name,
             "healthy": self.healthy,
             "mana": self.mana,
+            "max_mana": self.max_mana,
             "attack": self.attack,
             "defense": self.defense,
             "attack_speed": self.attack_speed,
             "level": self.level,
             "miss": self.miss,
+            "hit": self.hit,
+            "critical_rate": self.critical_rate,
             "strength": self.strength,
             "intelligence": self.intelligence,
             "constitution": self.constitution,

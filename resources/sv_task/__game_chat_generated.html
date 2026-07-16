@@ -5,23 +5,24 @@
     <title>Chat</title>
 </head>
 <body>
-<div id="app" width="372" height="248" close="false" padding="8 10 6 10" background-color="#050505">
-    <div id="chat_messages" width="348" height="92" padding="4 6 4 6" background-color="#101010">
-        <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">抵制不良游戏，拒绝盗版游戏。</p></row>
-            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">注意自我保护，谨防受骗上当。</p></row>
-            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">适度游戏益脑，沉迷游戏伤身。</p></row>
-            <row><p width="60" color="#FFE08A" font-size="12">[系统] :</p><p width="176" color="#FFE08A" font-size="12">合理安排时间，享受健康生活。</p></row>
+<div id="app" width="372" height="278" close="false" padding="8 10 6 10" background-color="#050505">
+    <div id="chat_messages" width="348" height="122" padding="4 6 4 6" background-color="#101010">
+        <row><p width="62" color="#FFE08A" font-size="12">[系统] :</p><p width="186" color="#FFE08A" font-size="12">适度游戏益脑，沉迷游戏伤身。</p></row>
+            <row><p width="62" color="#FFE08A" font-size="12">[系统] :</p><p width="186" color="#FFE08A" font-size="12">合理安排时间，享受健康生活。</p></row>
+            <row><p width="78" color="#FFE08A" font-size="12">[系统] GM:</p><p width="194" color="#FFE08A" font-size="12">已移动到地图 1042: 100,200</p></row>
+            <row><p width="78" color="#FFE08A" font-size="12">[系统] GM:</p><p width="228" color="#FFE08A" font-size="12">已移动到当前地图 1042: 100,92 (</p></row>
+            <row><p width="90" color="#FFE08A" font-size="12">已避开障碍点)</p></row>
     </div>
     <row>
-        <button id="chat_channel_一般_active" width="68" height="24" color="#FFE08A" @click="chat_channel_一般">&gt;一般频道</button>
-        <button id="chat_channel_队伍_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_队伍">队伍频道</button>
-        <button id="chat_channel_诸侯_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_诸侯">诸侯频道</button>
-        <button id="chat_channel_世界_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_世界">世界频道</button>
-        <button id="chat_channel_系统_idle" width="68" height="24" color="#FFFFFF" @click="chat_channel_系统">系统频道</button>
+        <button id="chat_channel_一般_active" width="54" height="24" color="#FFE08A" @click="chat_channel_一般">一般</button>
+        <button id="chat_channel_队伍_idle" width="54" height="24" color="#FFFFFF" @click="chat_channel_队伍">队伍</button>
+        <button id="chat_channel_诸侯_idle" width="54" height="24" color="#FFFFFF" @click="chat_channel_诸侯">诸侯</button>
+        <button id="chat_channel_世界_idle" width="54" height="24" color="#FFFFFF" @click="chat_channel_世界">世界</button>
+        <button id="chat_channel_系统_idle" width="54" height="24" color="#FFFFFF" @click="chat_channel_系统">系统</button>
     </row>
     <row padding="6 0 0 0">
         <img id="chat_face_toggle" src="chat_faces_13x13_32/face_1.png" width="30" height="30" img-size="30,30" @click="chat_faces_toggle" />
-        <input id="chat_input" type="text" width="220" height="24" placeholder="一般频道" @submit="chat_submit" @history="chat_history"/>
+        <input id="chat_input" type="text" width="220" height="24" placeholder="一般" @submit="chat_submit" @history="chat_history"/>
         <button id="chat_send_btn" width="56" height="24" @click="chat_send">发送</button>
     </row>
     

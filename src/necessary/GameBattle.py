@@ -373,7 +373,12 @@ class _Battle(SpriteBase):
                                                     self.gm.game_win_rect.height // 2 - self.cmd_tip_bg.height // 2))
 
     def _render_battle_unit_labels(self):
-        units = [self.player] + [enemy for enemy in self.enemy_list if enemy.UID not in self._captured_units]
+        units = [self.player] + [
+            enemy for enemy in self.enemy_list
+            if enemy.UID not in self._captured_units
+            and enemy.sprite_state != SpriteState.DEAD
+            and enemy.healthy > 0
+        ]
         for unit in units:
             if unit is None or unit.rect is None:
                 continue
@@ -512,6 +517,18 @@ class _Battle(SpriteBase):
                     "message": effect.message,
                     "rate": 0,
                 })], [effect]
+            try:
+                from src.manager.DungeonManager import DungeonManager
+                if DungeonManager.is_no_capture_unit(target):
+                    effect = BattleEffect("capture", actor.UID, actor.name, success=False,
+                                          message="副本首领不可捕捉")
+                    return [Action(actor, "capture_result", [actor], timer=20, extra={
+                        "success": False,
+                        "message": effect.message,
+                        "rate": 0,
+                    })], [effect]
+            except Exception:
+                pass
             effect = BattleRules.apply_capture(actor, target, mutate=False)
             return self._make_capture_actions(actor, target, effect), [effect]
 
@@ -606,7 +623,7 @@ class _Battle(SpriteBase):
             Action(actor, "move", [target], allow_retarget=True),
             Action(actor, "attack_animation", [target], animation_name="战斗_攻击2", allow_retarget=True),
             Action(actor, "hurt", targets=[target], animation_parallel=True, timer=15, damage=effect.value,
-                   allow_retarget=True),
+                   damage_map={effect.target_uid: effect.value}, allow_retarget=True),
             Action(actor, "back", back=old_pos),
             Action(actor, "change_anim", animation_name=f"stand_{actor.animator.get_dir(direction_name)}",
                    animation_loop=True),
@@ -1024,31 +1041,34 @@ class _Battle(SpriteBase):
                 # 恢复敌人因为受击之后需要恢复的动画
                 for target in action.targets:
                     if target.sprite_state == SpriteState.DEAD:
-                        target.animator.play("战斗_死亡", False)
+                        self._play_death_animation(target)
                         continue  # 死亡了就不要播放其他动画了
-                    target.direction = target.animator.get_dir(target.battle_dict["default_dir"])
-                    target.animator.play(f"stand_{target.direction}")
-                    self.log(f"{target.name}播放动画: stand_{target.direction}")
+                    try:
+                        target.direction = target.animator.get_dir(target.battle_dict["default_dir"])
+                        target.animator.play(f"stand_{target.direction}")
+                        self.log(f"{target.name}播放动画: stand_{target.direction}")
+                    except Exception as exc:
+                        self.log(f"{target.name} 待机动画恢复失败. {exc}")
             return action.timer == 0
 
-        total = 0
+        done = action.extra.get("hurt_done")
+        if not isinstance(done, set):
+            done = set(done or [])
+            action.extra["hurt_done"] = done
+
         for target in action.targets:
+            if target.UID in done:
+                continue
             if target.sprite_state == SpriteState.DEAD or target.healthy <= 0:
-                total += 1
+                done.add(target.UID)
                 continue
             if target.animator.current == anim_name:
                 if target.animator.is_playing(anim_name) and target.animator.finished:
-                    action.animation_complete = True
-                    total += 1
-                    damage = action.damage_map.get(target.UID, action.damage or action.actor.attack)
-                    _hurt = self._apply_fixed_damage(target, damage)
+                    damage = self._action_damage_for_target(action, target)
+                    _hurt = self._apply_fixed_damage(action.actor, target, damage)
+                    done.add(target.UID)
                     if target.sprite_state == SpriteState.DEAD:
-                        # target.animator.play("战斗_死亡", False)
-                        # 从事件队列移除 ,但是暂时不从总的列表移除. 需要播放一些动画
-                        for ac in self.action_queue:
-                            if ac.uid == target.UID:
-                                self.action_queue.remove(ac)
-                                break
+                        self._remove_unit_actions(target.UID)
                     continue
 
             if not target.animator.is_playing(anim_name):
@@ -1057,24 +1077,30 @@ class _Battle(SpriteBase):
                 except ValueError as ve:
                     self.log(f"受击动画 {anim_name} 未找到. {ve}")
                     # 找不到动画也还是要执行受伤的
-                    damage = action.damage_map.get(target.UID, action.damage or action.actor.attack)
-                    _hurt = self._apply_fixed_damage(target, damage)
+                    damage = self._action_damage_for_target(action, target)
+                    _hurt = self._apply_fixed_damage(action.actor, target, damage)
+                    done.add(target.UID)
                     if target.sprite_state == SpriteState.DEAD:
-                        try:
-                            target.animator.play("战斗_死亡", False)
-                        except ValueError as ve:
-                            self.log(f"死亡动画 {anim_name} 未找到. {ve}")
-                            target.animator.stop()  # 连待机都给停掉吧
-                        # 从事件队列移除 ,但是暂时不从总的列表移除. 需要播放一些动画
-                        for ac in self.action_queue:
-                            if ac.uid == target.UID:
-                                self.action_queue.remove(ac)
-                                break
-                    return True  # 没有动画还说啥, 直接执行完成吧
+                        self._play_death_animation(target)
+                        self._remove_unit_actions(target.UID)
+                    continue
+        if all(target.UID in done for target in action.targets):
+            action.animation_complete = True
         return False
 
-    def _apply_fixed_damage(self, target: SpriteBase, damage: int) -> int:
-        damage = max(1, int(damage or 1))
+    @staticmethod
+    def _action_damage_for_target(action: Action, target: SpriteBase) -> int:
+        if target.UID in action.damage_map:
+            return action.damage_map.get(target.UID, 0)
+        if action.damage > 0:
+            return action.damage
+        return getattr(action.actor, "attack", 1)
+
+    def _apply_fixed_damage(self, actor: SpriteBase, target: SpriteBase, damage: int) -> int:
+        damage = max(0, int(damage or 0))
+        if damage <= 0:
+            self.log(f"{actor.name} 对 {target.name} 未命中")
+            return 0
         target.healthy = max(0, int(target.healthy) - damage)
         self.log(f"{target.name} 受到 {damage} 点伤害, 剩余HP: {target.healthy}")
         if target.healthy <= 0:
@@ -1082,6 +1108,13 @@ class _Battle(SpriteBase):
             target.sprite_state = SpriteState.DEAD
             target.on_death()
         return damage
+
+    def _play_death_animation(self, target: SpriteBase):
+        try:
+            target.animator.play("战斗_死亡", False)
+        except Exception as exc:
+            self.log(f"死亡动画 战斗_死亡 播放失败. {exc}")
+            target.animator.stop()
 
     def _process_capture_action(self, action: Action):
         if action.animation_complete:

@@ -33,6 +33,9 @@ class WeatherSystem(SpriteBase):
         self.__weather_type = weather_type
         self.particles = []
 
+        if not weather_type:
+            return
+
         if weather_type == "rain":
             # 初始化雨滴：[x, y, speed, length]
             self.particles = [[random.randint(0, self.view_rect.width),
@@ -50,6 +53,10 @@ class WeatherSystem(SpriteBase):
             self.fog_surface = pygame.Surface((self.view_rect.width, self.view_rect.height))
             self.fog_surface.set_alpha(120)  # 雾的浓度
             self.fog_surface.fill((200, 200, 200))  # 灰白色雾
+
+    def clear(self):
+        """清空当前天气效果。"""
+        self.setWeather(None)
 
     def render_sticky(self):
         """置顶渲染"""
